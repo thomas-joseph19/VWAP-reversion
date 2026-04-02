@@ -93,8 +93,8 @@ Plans:
 **Plans**: 3 plans
 Plans:
 - [x] 05-01-PLAN.md - Build and test the sequential quote-side replay engine for immediate setup-driven trades
-- [ ] 05-02-PLAN.md - Define the shared replay batch contract, target/stop/session-end behavior, and cost-aware trade-log outputs
-- [ ] 05-03-PLAN.md - Add one-position skip handling, deterministic Phase 5 artifacts, and CLI wiring for rebuilds
+- [x] 05-02-PLAN.md - Define the shared replay batch contract, target/stop/session-end behavior, and cost-aware trade-log outputs
+- [x] 05-03-PLAN.md - Add one-position skip handling, deterministic Phase 5 artifacts, and CLI wiring for rebuilds
 
 ### Phase 6: Core Analytics & Output
 **Goal**: Backtest results quantified with standard performance metrics and exported for analysis
@@ -163,7 +163,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Daily VWAP Engine | 2/2 | Internally verified; external chart validation deferred | 2026-04-02 |
 | 3. Simple Structural Levels | 2/2 | Internally verified; external chart validation deferred | 2026-04-02 |
 | 4. Setup Detection | 2/2 | Implemented; manual setup-log validation pending | 2026-04-02 |
-| 5. Trade Simulation Engine | 0/3 | Planned | - |
+| 5. Trade Simulation Engine | 3/3 | Complete | 2026-04-02 |
 | 6. Core Analytics & Output | 0/? | Not started | - |
 | 7. Volume Profile Engine | 0/? | Not started | - |
 | 8. Regime & Multi-Timeframe VWAP | 0/? | Not started | - |
