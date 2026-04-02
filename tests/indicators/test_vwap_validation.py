@@ -141,5 +141,7 @@ def test_cli_writes_indicator_and_validation_artifacts() -> None:
         assert (output_root / "phase2_daily_vwap.parquet").exists()
         assert (output_root / "validation" / "vwap_validation_export.csv").exists()
         assert (output_root / "validation" / "validation_sessions.json").exists()
+        manifest = json.loads((output_root / "validation" / "validation_sessions.json").read_text(encoding="utf-8"))
+        assert manifest["validation_dates"] == [f"2024-01-0{day}" for day in range(2, 7)]
     finally:
         shutil.rmtree(tmp_path, ignore_errors=True)
