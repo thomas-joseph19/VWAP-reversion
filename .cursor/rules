@@ -1,0 +1,148 @@
+<!-- gsd-project-start source:PROJECT.md -->
+## Project
+
+**VWAP Reversion Backtester**
+
+A backtest engine that replays ~3 years of 1-second NQ futures BBO data to test a VWAP mean reversion strategy. The system identifies when price is extended from fair value at structural extremes, mechanically defines continuation failure, and simulates reversion trades back toward value. Built for a single trader to validate and refine the baytrading VWAP reversion model with hard data.
+
+**Core Value:** Accurately measure the statistical edge of entering NQ reversion trades when price is extended from VWAP at structural levels during the first 1-2 hours of the NY session — across different volatility regimes.
+
+### Constraints
+
+- **Language**: Python — standard data science ecosystem (pandas, numpy)
+- **Data format**: CSV files, one per trading day, read from local disk
+- **Performance**: Must handle ~884 files × ~150K rows each efficiently; consider chunked processing or pre-filtering
+- **Time zones**: All timestamps in UTC; must convert to US/Eastern for session logic (RTH open 9:30 AM ET)
+- **Contract rolls**: NQ rolls quarterly (March, June, September, December) — typically the Thursday before expiration Friday
+<!-- gsd-project-end -->
+
+<!-- gsd-stack-start source:research/STACK.md -->
+## Technology Stack
+
+## Decision: Custom Build, Not a Framework
+## Recommended Stack
+### Core Technologies
+| Technology | Version | Purpose | Why Recommended | Confidence |
+|------------|---------|---------|-----------------|------------|
+| Python | 3.13.x | Runtime | Stable, well-supported by all numeric libraries. 3.14 is production-ready but Numba lags new Python versions. 3.13 is the safe sweet spot. | HIGH |
+| Polars | ≥1.39.1 | Data loading, filtering, aggregation | 5-30x faster than Pandas for CSV reads, groupby, and filtering. Lazy evaluation via `scan_csv()` lets you filter front-month contracts *before* loading data into memory — critical when processing 884 files. Rust backend, automatic parallelization, no GIL. | HIGH |
+| NumPy | ≥2.4.4 | Numeric computation (VWAP, bands, profiles) | `np.cumsum()` for VWAP is 5x faster than Pandas equivalent. All rolling/cumulative math lives here. NumPy arrays are the lingua franca between Polars output and Numba-accelerated functions. | HIGH |
+| Numba | ≥0.65.0 | JIT compilation for hot loops | 2-10x speedup on the event-driven backtest loop and any per-bar computation that can't be vectorized (continuation-failure detection, trade state machine). `@njit` with `cache=True` for zero-warmup on subsequent runs. | HIGH |
+| PyArrow | ≥23.0.1 | Parquet I/O, Arrow memory format | Polars' native interchange format. Used for the CSV→Parquet one-time conversion that turns 15GB of CSVs into ~3-5GB of Parquet files with 10x faster subsequent reads. | HIGH |
+### Supporting Libraries
+| Library | Version | Purpose | When to Use | Confidence |
+|---------|---------|---------|-------------|------------|
+| `zoneinfo` | stdlib | UTC → US/Eastern timezone conversion | All session logic: RTH open detection (9:30 ET), overnight session splitting. Built into Python 3.9+, replaces pytz. | HIGH |
+| `tzdata` | ≥2025.2 | IANA timezone database for Windows | Windows doesn't ship system TZ data — this package provides it. Required for `zoneinfo` to work on the user's Windows machine. | HIGH |
+| `pytest` | ≥9.0.2 | Testing | Validate VWAP calculations against known values, verify front-month contract selection logic, test session boundaries around DST transitions. | HIGH |
+| `dataclasses` | stdlib | Trade, Position, Signal data structures | Clean immutable records for the backtest event loop. No need for Pydantic or attrs in a CLI backtest tool. | HIGH |
+| `pathlib` | stdlib | File path handling | Cross-platform path resolution for the 884 CSV files. | HIGH |
+| `logging` | stdlib | Runtime diagnostics | Track which files are processed, flag data anomalies (missing trades, gap days), report backtest progress. | HIGH |
+| `json` | stdlib | Config and results output | Strategy parameters, backtest results. No need for YAML/TOML parsers. | HIGH |
+### Development Tools
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| `pytest` | Unit + integration tests | Test VWAP math against hand-calculated values; test contract roll logic against known roll dates |
+| `ruff` | Linting + formatting | Single tool replaces flake8, black, isort. Fast (Rust-based). Use `ruff check` and `ruff format`. |
+| `mypy` | Optional type checking | Useful if type annotations are added, but not blocking for a research tool |
+| Python REPL / Jupyter | Ad-hoc data exploration | Inspect individual day files, validate volume profiles visually |
+## Installation
+## Alternatives Considered
+| Category | Recommended | Alternative | When to Use Alternative |
+|----------|-------------|-------------|------------------------|
+| Data engine | Polars | Pandas 3.0 | If you need tight scikit-learn/statsmodels integration (not needed here). Pandas 3.0 with PyArrow backend is better than 2.x but still 5-10x slower than Polars at this data scale. |
+| Data engine | Polars | DuckDB | If you want SQL-based analytics or need to query data larger than RAM. Overkill here — filtered front-month NQ data fits comfortably in memory. |
+| JIT compiler | Numba | Cython | If you need C-extension compilation. Numba is simpler (decorators, not separate build step) and fast enough for this use case. |
+| Backtest framework | Custom | VectorBT | If you're doing parameter sweeps across thousands of strategy variants. This project tests one specific strategy — the framework overhead isn't justified. |
+| Backtest framework | Custom | NautilusTrader | If you need live trading or institutional-grade order modeling. This is backtest-only with simple market-order fills. |
+| Backtest framework | Custom | Backtrader | Never. Slow (pure Python), abandoned by original author, shows strain at scale. |
+| Timezone | zoneinfo | pytz | Never for new projects. pytz is legacy; Pandas is dropping it. zoneinfo is stdlib. |
+| Data format | Parquet (converted) | Raw CSV | First run loads CSVs; subsequent runs use Parquet. Keep both — CSVs are the source of truth, Parquet is the performance cache. |
+## What NOT to Use
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| Pandas as primary data engine | 5-30x slower than Polars for CSV reads, groupby, and filtering at 100M+ row scale. Memory-hungry — loads entire files before filtering. | Polars with lazy evaluation |
+| Backtrader | Abandoned by original author. Pure Python — will crawl on 100M+ rows. Event-driven overhead is pointless for a single replay-style backtest. | Custom NumPy/Numba engine |
+| pytz | Legacy. `zoneinfo` is stdlib since Python 3.9. pytz has DST edge cases that zoneinfo handles correctly. Pandas is dropping pytz support. | `zoneinfo` + `tzdata` |
+| ta-lib / pandas-ta | Generic indicator libraries. VWAP, sigma bands, and volume profiles are simple cumulative math — 5-10 lines of NumPy. Adding a C-compiled ta-lib dependency for `cumsum(pv)/cumsum(v)` is absurd. | Direct NumPy computation |
+| SQLite / database | The data is read-once, process-sequentially. There are no random-access queries. A database adds complexity with zero benefit. | Polars scan + Parquet cache |
+| Matplotlib for results | Out of scope — the project outputs CSV/JSON. If visualization is added later, Plotly is better for interactive financial charts. | CSV/JSON output; Plotly if needed later |
+| `decimal.Decimal` | NQ tick size is 0.25 points ($5/tick). IEEE 754 float64 has ~15 digits of precision. Rounding to tick boundaries is trivial: `round(price * 4) / 4`. Decimal would be 100x slower for zero practical benefit. | float64 with tick-rounding |
+## Performance Considerations
+### Data Scale
+- **884 daily CSV files**, each ~15-22MB, ~150K rows → ~15GB raw, ~130M total rows
+- After front-month filtering: ~60-70% of rows are front-month NQ → ~80-90M rows
+- Each row is narrow (17 columns, mostly numeric) → ~2-4GB in memory after filtering
+### Critical Optimizations
+| Stage | Estimated Memory |
+|-------|-----------------|
+| Single day (front-month filtered) | ~5-15 MB |
+| All days in memory (if needed) | ~2-4 GB |
+| HTF volume profile (180-day rolling) | ~200-500 MB |
+| Backtest state (positions, trades) | < 10 MB |
+| **Total peak** | **~3-5 GB** |
+### Processing Architecture
+### Expected Performance
+| Operation | Estimated Time |
+|-----------|---------------|
+| CSV→Parquet conversion (one-time) | 2-5 minutes |
+| Load all Parquet files | 10-30 seconds |
+| VWAP + bands for all sessions | 5-15 seconds |
+| Volume profiles (daily + 180-day HTF) | 30-60 seconds |
+| Full backtest (884 days) | 30-120 seconds |
+| **Total per run (after conversion)** | **~1-4 minutes** |
+## Data Pipeline Detail
+### CSV Format (Databento CME MDP3 BBO)
+- `ts_recv` and `ts_event` are nanosecond Unix timestamps → parse as `pl.Datetime("ns")`
+- `side` is categorical: `B` (buy trade), `A` (ask/sell trade), `N` (no trade, BBO snapshot only)
+- `price` and `size` are populated only when `side ∈ {B, A}` — otherwise use `bid_px_00`/`ask_px_00` for mid-price
+- `symbol` contains mixed contracts (NQH4, NQM4, NQU4, NQZ4, spreads like NQH4-NQM4)
+### Polars Schema Declaration
+## Sources
+- Polars v1.39.1 release: https://github.com/pola-rs/polars/releases/tag/py-1.39.1
+- NumPy v2.4.4 release: https://github.com/numpy/numpy/releases/tag/v2.4.4
+- Numba v0.65.0 release: https://pypi.org/project/numba/
+- PyArrow v23.0.1 release: https://arrow.apache.org/release/23.0.1.html
+- Pandas 3.0 PyArrow changes: https://medium.com/@kaniel-outis/pandas-3-0s-pyarrow-string-revolution
+- Polars vs Pandas benchmarks (100M rows): https://tildalice.io/polars-vs-pandas-2026-benchmarks/
+- Python 3.14 release schedule: https://peps.python.org/pep-0745/
+- zoneinfo stdlib docs: https://docs.python.org/3.15/library/zoneinfo.html
+- pytest v9.0.2: https://docs.pytest.org/en/stable/changelog.html
+- Parquet vs CSV for quant trading: https://medium.com/balaena-quant-insights/replacing-the-csv-file-format-806c35e4125d
+- VectorBT vs event-driven backtesting: https://python.financial/
+- Databento Python SDK: https://github.com/databento/databento-python
+<!-- gsd-stack-end -->
+
+<!-- gsd-conventions-start source:CONVENTIONS.md -->
+## Conventions
+
+Conventions not yet established. Will populate as patterns emerge during development.
+<!-- gsd-conventions-end -->
+
+<!-- gsd-architecture-start source:ARCHITECTURE.md -->
+## Architecture
+
+Architecture not yet mapped. Follow existing patterns found in the codebase.
+<!-- gsd-architecture-end -->
+
+<!-- gsd-workflow-start source:GSD defaults -->
+## GSD Workflow Enforcement
+
+Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+
+Use these entry points:
+- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
+- `/gsd-debug` for investigation and bug fixing
+- `/gsd-execute-phase` for planned phase work
+
+Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
+<!-- gsd-workflow-end -->
+
+
+
+<!-- gsd-profile-start -->
+## Developer Profile
+
+> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
+> This section is managed by `generate-claude-profile` -- do not edit manually.
+<!-- gsd-profile-end -->

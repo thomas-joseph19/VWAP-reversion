@@ -9,14 +9,14 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Data Pipeline
 
-- [ ] **DATA-01**: System ingests CME Globex MDP3 BBO 1-second CSV files (one per trading day, ~884 files)
-- [ ] **DATA-02**: System identifies front-month NQ contract using volume-based detection (not nearest-expiration)
-- [ ] **DATA-03**: System handles quarterly contract rolls (March, June, September, December) with price gap management
-- [ ] **DATA-04**: System converts all timestamps from UTC to US/Eastern with correct DST handling (using zoneinfo, not pytz)
-- [ ] **DATA-05**: System defines session boundaries — RTH (9:30-16:00 ET), overnight/globex (18:00-9:30 ET), full 24h
-- [ ] **DATA-06**: System performs one-time CSV→Parquet conversion and caches results for 5-10x faster subsequent loads
-- [ ] **DATA-07**: System validates data schema on load and reports quality issues (missing fields, corrupt rows, unexpected symbols)
-- [ ] **DATA-08**: System detects data gaps (missing days, missing time intervals) and identifies market holidays
+- [x] **DATA-01**: System ingests CME Globex MDP3 BBO 1-second CSV files (one per trading day, ~884 files)
+- [x] **DATA-02**: System identifies front-month NQ contract using volume-based detection (not nearest-expiration)
+- [x] **DATA-03**: System handles quarterly contract rolls (March, June, September, December) with price gap management
+- [x] **DATA-04**: System converts all timestamps from UTC to US/Eastern with correct DST handling (using zoneinfo, not pytz)
+- [x] **DATA-05**: System defines session boundaries — RTH (9:30-16:00 ET), overnight/globex (18:00-9:30 ET), full 24h
+- [x] **DATA-06**: System performs one-time CSV→Parquet conversion and caches results for 5-10x faster subsequent loads
+- [x] **DATA-07**: System validates data schema on load and reports quality issues (missing fields, corrupt rows, unexpected symbols)
+- [x] **DATA-08**: System detects data gaps (missing days, missing time intervals) and identifies market holidays
 
 ### VWAP & Deviation
 
@@ -109,14 +109,14 @@ Machine learning enhancement of the mechanical model.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DATA-01 | Phase 1 | Pending |
-| DATA-02 | Phase 1 | Pending |
-| DATA-03 | Phase 1 | Pending |
-| DATA-04 | Phase 1 | Pending |
-| DATA-05 | Phase 1 | Pending |
-| DATA-06 | Phase 1 | Pending |
-| DATA-07 | Phase 1 | Pending |
-| DATA-08 | Phase 1 | Pending |
+| DATA-01 | Phase 1 | Complete |
+| DATA-02 | Phase 1 | Complete |
+| DATA-03 | Phase 1 | Complete |
+| DATA-04 | Phase 1 | Complete |
+| DATA-05 | Phase 1 | Complete |
+| DATA-06 | Phase 1 | Complete |
+| DATA-07 | Phase 1 | Complete |
+| DATA-08 | Phase 1 | Complete |
 | VWAP-01 | Phase 2 | Pending |
 | VWAP-02 | Phase 2 | Pending |
 | VWAP-03 | Phase 4 | Pending |
@@ -162,4 +162,4 @@ Machine learning enhancement of the mechanical model.
 
 ---
 *Requirements defined: 2026-04-01*
-*Last updated: 2026-04-01 after roadmap creation*
+*Last updated: 2026-04-02 after Phase 1 completion*

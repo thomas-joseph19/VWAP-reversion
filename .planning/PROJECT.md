@@ -12,7 +12,7 @@ Accurately measure the statistical edge of entering NQ reversion trades when pri
 
 ### Validated
 
-(None yet — ship to validate)
+- Phase 1 (2026-04-02): CME Globex BBO ingestion, causal front-month mapping, ET session labeling, partitioned parquet cache, and audit artifact generation are in place for NQ-only data.
 
 ### Active
 
@@ -88,7 +88,13 @@ Accurately measure the statistical edge of entering NQ reversion trades when pri
 | Gamma from realized vol | No options/GEX data available; vol regime is a reasonable proxy | — Pending |
 | Mechanical failure definition | No DOM/tape data; price-action-based rejection serves as proxy for failed continuation | — Pending |
 | Mid-price for VWAP when no trades | During low-activity periods, use mid-price with imputed minimal size to avoid gaps | — Pending |
-| Python | Standard ecosystem for data analysis; user is building a research tool, not a production system | — Pending |
+| Python | Standard ecosystem for data analysis; user is building a research tool, not a production system | Polars-first package with parquet cache CLI shipped in Phase 1 |
+| Phase 1 canonical timestamp | `ts_event` may be blank on quote-only rows | Use parsed `ts_recv` as the structural ordering key and preserve `ts_event` when present |
+| Phase 1 cache layout | Downstream phases need one trusted dataset | Use one canonical parquet dataset partitioned by `trading_date` with sibling roll/quality/schema artifacts |
+
+## Current State
+
+Phase 1 is complete. The codebase now has a runnable `src/` package, typed Databento ingestion, same-day volume front-month selection, ET session/trading-date labels, a partitioned canonical parquet cache, and a Phase 1 CLI build command that emits benchmark and audit artifacts.
 
 ## Evolution
 
@@ -108,4 +114,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-01 after initialization*
+*Last updated: 2026-04-02 after Phase 1 completion*
