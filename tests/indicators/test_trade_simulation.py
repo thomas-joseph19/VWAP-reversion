@@ -12,6 +12,7 @@ from vwap_revert.simulation import (
     pnl_dollars,
     pnl_points,
     replay_single_trade,
+    simulate_trades,
 )
 
 
@@ -261,3 +262,57 @@ def test_session_end_forces_exit_at_1600_et() -> None:
     assert trade["exit_ts"] == _ts(2024, 1, 5, 21, 0, 0)
     assert trade["exit_price"] == 100.00
     assert trade["duration_seconds"] == 1.0
+
+
+def test_overlapping_setups_are_skipped_while_position_active() -> None:
+    setup_log = pl.DataFrame(
+        {
+            "trading_date": [date(2024, 1, 8), date(2024, 1, 8)],
+            "ts_recv": [_ts(2024, 1, 8, 14, 30, 0), _ts(2024, 1, 8, 14, 30, 1)],
+            "ts_recv_et": [_ts(2024, 1, 8, 9, 30, 0), _ts(2024, 1, 8, 9, 30, 1)],
+            "setup_direction": ["long", "short"],
+            "daily_vwap": [101.0, 101.0],
+            "setup_sigma_signed": [-2.1, 2.3],
+            "nearest_structural_level": ["prior_rth_val", "prior_rth_vah"],
+            "nearest_structural_distance": [1.5, 1.0],
+            "regime_label": ["balanced", "balanced"],
+            "regime_reason": ["fixture", "fixture"],
+            "bid_px_00": [100.0, 100.5],
+            "ask_px_00": [100.25, 100.75],
+        },
+        strict=False,
+    )
+    path_rows = pl.DataFrame(
+        {
+            "trading_date": [date(2024, 1, 8), date(2024, 1, 8), date(2024, 1, 8)],
+            "ts_recv": [
+                _ts(2024, 1, 8, 14, 30, 0),
+                _ts(2024, 1, 8, 14, 30, 1),
+                _ts(2024, 1, 8, 14, 30, 2),
+            ],
+            "ts_recv_et": [
+                _ts(2024, 1, 8, 9, 30, 0),
+                _ts(2024, 1, 8, 9, 30, 1),
+                _ts(2024, 1, 8, 9, 30, 2),
+            ],
+            "daily_vwap": [101.0, 101.0, 101.0],
+            "bid_px_00": [100.0, 100.5, 101.0],
+            "ask_px_00": [100.25, 100.75, 101.25],
+        },
+        strict=False,
+    )
+
+    result = simulate_trades(setup_log, path_rows, SimulationConfig())
+
+    assert result.trade_log.height == 1
+    assert result.trade_log["exit_reason"].to_list() == ["target_vwap"]
+    assert result.skipped_setups.height == 1
+    assert result.skipped_setups.to_dicts() == [
+        {
+            "trading_date": date(2024, 1, 8),
+            "ts_recv": _ts(2024, 1, 8, 14, 30, 1),
+            "setup_direction": "short",
+            "setup_sigma_signed": 2.3,
+            "skip_reason": "position_active",
+        }
+    ]

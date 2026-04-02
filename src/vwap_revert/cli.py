@@ -20,6 +20,7 @@ from .indicators.structural_levels import (
     write_structural_validation_export,
 )
 from .indicators.vwap import attach_daily_vwap_bands, write_enriched_vwap_artifact, write_vwap_validation_export
+from .simulation import SimulationConfig, write_trade_simulation_artifacts
 from .data_pipeline.manifest import build_manifest
 from .data_pipeline.quality import build_quality_report, detect_intraday_gaps
 from .data_pipeline.sessions import label_sessions
@@ -187,6 +188,42 @@ def build_phase4_setup_detection(
     return output_root / "phase4_setup_log.parquet"
 
 
+def _parse_phase5_validation_dates(validation_dates: list[str]) -> list[str]:
+    normalized = sorted(dict.fromkeys(validation_dates))
+    if not normalized:
+        raise ValueError("build-phase5-trade-simulation requires at least one --validation-date value")
+
+    for value in normalized:
+        date.fromisoformat(value)
+    return normalized
+
+
+def build_phase5_trade_simulation(
+    phase4_root: Path,
+    output_root: Path,
+    validation_dates: list[str],
+    stop_loss_points: float = 20.0,
+    round_trip_commission: float = 5.0,
+    additional_slippage_points: float = 0.0,
+) -> Path:
+    """Build deterministic Phase 5 trade artifacts from Phase 4 outputs."""
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    normalized_dates = _parse_phase5_validation_dates(validation_dates)
+    config = SimulationConfig(
+        stop_loss_points=stop_loss_points,
+        round_trip_commission=round_trip_commission,
+        additional_slippage_points=additional_slippage_points,
+    )
+    trade_log_path, _ = write_trade_simulation_artifacts(
+        phase4_root=phase4_root,
+        output_root=output_root,
+        validation_dates=normalized_dates,
+        config=config,
+    )
+    return trade_log_path
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="vwap_revert")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -214,6 +251,14 @@ def build_parser() -> argparse.ArgumentParser:
     phase4.add_argument("--proximity-threshold-points", type=float, default=10.0)
     phase4.add_argument("--min-sigma", type=float, default=1.7)
     phase4.add_argument("--max-sigma", type=float, default=3.0)
+
+    phase5 = subparsers.add_parser("build-phase5-trade-simulation")
+    phase5.add_argument("--phase4-root", type=Path, required=True)
+    phase5.add_argument("--output-root", type=Path, required=True)
+    phase5.add_argument("--validation-date", dest="validation_dates", action="append", required=True)
+    phase5.add_argument("--stop-loss-points", type=float, default=20.0)
+    phase5.add_argument("--round-trip-commission", type=float, default=5.0)
+    phase5.add_argument("--additional-slippage-points", type=float, default=0.0)
     return parser
 
 
@@ -242,6 +287,16 @@ def main(argv: list[str] | None = None) -> int:
             proximity_threshold_points=args.proximity_threshold_points,
             min_sigma=args.min_sigma,
             max_sigma=args.max_sigma,
+        )
+        return 0
+    if args.command == "build-phase5-trade-simulation":
+        build_phase5_trade_simulation(
+            args.phase4_root,
+            args.output_root,
+            args.validation_dates,
+            stop_loss_points=args.stop_loss_points,
+            round_trip_commission=args.round_trip_commission,
+            additional_slippage_points=args.additional_slippage_points,
         )
         return 0
     parser.error(f"Unknown command: {args.command}")

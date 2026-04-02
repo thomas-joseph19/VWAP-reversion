@@ -4,14 +4,29 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, time
+import json
 from math import isnan
+from pathlib import Path
 from typing import Mapping
 
 import polars as pl
 
 
+DEFAULT_STOP_LOSS_BASELINE_NOTE = (
+    "Default stop_loss_points=20.0 is a configurable non-optimized baseline for research and not an optimized strategy claim."
+)
+_PHASE4_SETUP_LOG_ARTIFACT_NAME = "phase4_setup_log.parquet"
+_PHASE4_ENRICHED_ARTIFACT_NAME = "phase4_setup_enriched.parquet"
+_PHASE5_TRADE_LOG_ARTIFACT_NAME = "phase5_trade_log.parquet"
+_PHASE5_SKIPPED_SETUPS_ARTIFACT_NAME = "phase5_skipped_setups.parquet"
+_PHASE5_VALIDATION_EXPORT_NAME = "trade_simulation_validation_export.csv"
+_PHASE5_VALIDATION_MANIFEST_NAME = "validation_sessions.json"
+
+
 @dataclass(frozen=True)
 class SimulationConfig:
+    """Simulation defaults; stop_loss_points is a configurable non-optimized baseline for research."""
+
     stop_loss_points: float = 20.0
     round_trip_commission: float = 5.0
     additional_slippage_points: float = 0.0
@@ -67,6 +82,10 @@ def _output_trade_columns() -> list[str]:
         "mae_points",
         "duration_seconds",
         "setup_sigma_signed",
+        "nearest_structural_level",
+        "nearest_structural_distance",
+        "regime_label",
+        "regime_reason",
     ]
 
 
@@ -78,6 +97,50 @@ def _skipped_setup_schema() -> dict[str, pl.DataType]:
         "setup_sigma_signed": pl.Float64,
         "skip_reason": pl.Utf8,
     }
+
+
+def _trade_log_schema() -> dict[str, pl.DataType]:
+    return {
+        "trading_date": pl.Date,
+        "direction": pl.Utf8,
+        "signal_ts": pl.Datetime(time_unit="us", time_zone="UTC"),
+        "entry_ts": pl.Datetime(time_unit="us", time_zone="UTC"),
+        "entry_price": pl.Float64,
+        "exit_ts": pl.Datetime(time_unit="us", time_zone="UTC"),
+        "exit_price": pl.Float64,
+        "exit_reason": pl.Utf8,
+        "target_price": pl.Float64,
+        "gross_points": pl.Float64,
+        "net_dollars": pl.Float64,
+        "mae_points": pl.Float64,
+        "duration_seconds": pl.Float64,
+        "setup_sigma_signed": pl.Float64,
+        "nearest_structural_level": pl.Utf8,
+        "nearest_structural_distance": pl.Float64,
+        "regime_label": pl.Utf8,
+        "regime_reason": pl.Utf8,
+    }
+
+
+def _validation_export_columns() -> list[str]:
+    return [
+        "trading_date",
+        "entry_ts",
+        "exit_ts",
+        "direction",
+        "entry_price",
+        "exit_price",
+        "exit_reason",
+        "gross_points",
+        "net_dollars",
+        "mae_points",
+        "duration_seconds",
+        "setup_sigma_signed",
+        "nearest_structural_level",
+        "nearest_structural_distance",
+        "regime_label",
+        "regime_reason",
+    ]
 
 
 def entry_fill_price(
@@ -147,6 +210,14 @@ def open_trade_from_setup(setup: Mapping[str, object], config: SimulationConfig)
         "target_price": float(daily_vwap),
         "daily_vwap": float(daily_vwap),
         "setup_sigma_signed": float(setup_sigma_signed),
+        "nearest_structural_level": setup.get("nearest_structural_level"),
+        "nearest_structural_distance": (
+            None
+            if setup.get("nearest_structural_distance") is None
+            else float(setup.get("nearest_structural_distance"))
+        ),
+        "regime_label": None if setup.get("regime_label") is None else str(setup.get("regime_label")),
+        "regime_reason": None if setup.get("regime_reason") is None else str(setup.get("regime_reason")),
         "stop_loss_points": config.stop_loss_points,
         "round_trip_commission": config.round_trip_commission,
         "additional_slippage_points": config.additional_slippage_points,
@@ -172,6 +243,16 @@ def replay_single_trade(
     )
     round_trip_commission = float(trade.get("round_trip_commission", config.round_trip_commission))
     setup_sigma_signed = float(trade.get("setup_sigma_signed", 0.0))
+    nearest_structural_level = (
+        None if trade.get("nearest_structural_level") is None else str(trade.get("nearest_structural_level"))
+    )
+    nearest_structural_distance = (
+        None
+        if trade.get("nearest_structural_distance") is None
+        else float(trade.get("nearest_structural_distance"))
+    )
+    regime_label = None if trade.get("regime_label") is None else str(trade.get("regime_label"))
+    regime_reason = None if trade.get("regime_reason") is None else str(trade.get("regime_reason"))
 
     ordered_rows = path_rows.sort(["trading_date", "ts_recv"]).filter(
         (pl.col("trading_date") == trading_date) & (pl.col("ts_recv") >= entry_ts)
@@ -228,6 +309,10 @@ def replay_single_trade(
                 "mae_points": mae_points,
                 "duration_seconds": (exit_ts - entry_ts).total_seconds(),
                 "setup_sigma_signed": setup_sigma_signed,
+                "nearest_structural_level": nearest_structural_level,
+                "nearest_structural_distance": nearest_structural_distance,
+                "regime_label": regime_label,
+                "regime_reason": regime_reason,
             }
 
         if ts_recv_et.timetz().replace(tzinfo=None) >= config.session_exit_time:
@@ -265,6 +350,10 @@ def replay_single_trade(
         "mae_points": mae_points,
         "duration_seconds": (exit_ts - entry_ts).total_seconds(),
         "setup_sigma_signed": setup_sigma_signed,
+        "nearest_structural_level": nearest_structural_level,
+        "nearest_structural_distance": nearest_structural_distance,
+        "regime_label": regime_label,
+        "regime_reason": regime_reason,
     }
 
 
@@ -298,9 +387,7 @@ def simulate_trades(
     trade_log = (
         pl.DataFrame(completed_trades).select(_output_trade_columns()).sort("entry_ts")
         if completed_trades
-        else pl.DataFrame(schema={column: pl.Null for column in _output_trade_columns()}).select(
-            _output_trade_columns()
-        )
+        else pl.DataFrame(schema=_trade_log_schema()).select(_output_trade_columns())
     )
     skipped_df = (
         pl.DataFrame(skipped_setups, schema=_skipped_setup_schema())
@@ -311,7 +398,58 @@ def simulate_trades(
     return SimulationBatchResult(trade_log=trade_log, skipped_setups=skipped_df)
 
 
+def write_trade_simulation_artifacts(
+    phase4_root: Path,
+    output_root: Path,
+    validation_dates: list[str],
+    config: SimulationConfig,
+) -> tuple[Path, Path]:
+    """Rebuild deterministic Phase 5 artifacts from Phase 4 setup and enriched parquet outputs."""
+
+    normalized_dates = sorted(dict.fromkeys(validation_dates))
+    if not normalized_dates:
+        raise ValueError("validation_dates must include at least one YYYY-MM-DD value")
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    validation_dir = output_root / "validation"
+    validation_dir.mkdir(parents=True, exist_ok=True)
+
+    setup_log = pl.read_parquet(phase4_root / _PHASE4_SETUP_LOG_ARTIFACT_NAME)
+    path_rows = pl.read_parquet(phase4_root / _PHASE4_ENRICHED_ARTIFACT_NAME)
+    result = simulate_trades(setup_log=setup_log, path_rows=path_rows, config=config)
+
+    trade_log_path = output_root / _PHASE5_TRADE_LOG_ARTIFACT_NAME
+    skipped_setups_path = output_root / _PHASE5_SKIPPED_SETUPS_ARTIFACT_NAME
+    result.trade_log.write_parquet(trade_log_path)
+    result.skipped_setups.write_parquet(skipped_setups_path)
+
+    validation_export = (
+        result.trade_log.with_columns(pl.col("trading_date").cast(pl.Utf8))
+        .filter(pl.col("trading_date").is_in(normalized_dates))
+        .sort(["trading_date", "entry_ts"])
+        .select(_validation_export_columns())
+    )
+    validation_export.write_csv(validation_dir / _PHASE5_VALIDATION_EXPORT_NAME)
+
+    manifest = {
+        "phase4_setup_log_artifact": _PHASE4_SETUP_LOG_ARTIFACT_NAME,
+        "phase4_enriched_artifact": _PHASE4_ENRICHED_ARTIFACT_NAME,
+        "trade_log_artifact": _PHASE5_TRADE_LOG_ARTIFACT_NAME,
+        "skipped_setups_artifact": _PHASE5_SKIPPED_SETUPS_ARTIFACT_NAME,
+        "comparison_export": f"validation/{_PHASE5_VALIDATION_EXPORT_NAME}",
+        "validation_dates": normalized_dates,
+        "row_count": validation_export.height,
+        "stop_loss_baseline_note": DEFAULT_STOP_LOSS_BASELINE_NOTE,
+    }
+    (validation_dir / _PHASE5_VALIDATION_MANIFEST_NAME).write_text(
+        json.dumps(manifest, indent=2),
+        encoding="utf-8",
+    )
+    return trade_log_path, skipped_setups_path
+
+
 __all__ = [
+    "DEFAULT_STOP_LOSS_BASELINE_NOTE",
     "SimulationConfig",
     "SimulationBatchResult",
     "entry_fill_price",
@@ -321,4 +459,5 @@ __all__ = [
     "pnl_dollars",
     "replay_single_trade",
     "simulate_trades",
+    "write_trade_simulation_artifacts",
 ]
