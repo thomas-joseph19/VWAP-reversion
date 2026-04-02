@@ -13,6 +13,7 @@ import polars as pl
 from .data_pipeline.cache import scan_canonical_cache, write_canonical_cache
 from .data_pipeline.contracts import add_contract_trading_date, apply_contract_map, build_daily_contract_map
 from .data_pipeline.ingest import collect_sample_day
+from .indicators.vwap import attach_daily_vwap_bands, write_enriched_vwap_artifact, write_vwap_validation_export
 from .data_pipeline.manifest import build_manifest
 from .data_pipeline.quality import build_quality_report, detect_intraday_gaps
 from .data_pipeline.sessions import label_sessions
@@ -91,14 +92,40 @@ def build_phase1_cache(csv_root: Path, output_root: Path, holiday_calendar: Path
     return benchmark
 
 
+def _parse_validation_dates(validation_dates: list[str]) -> list[str]:
+    normalized = sorted(dict.fromkeys(validation_dates))
+    if len(normalized) < 5:
+        raise ValueError("build-phase2-vwap requires at least five --validation-date values for manual validation")
+
+    for value in normalized:
+        date.fromisoformat(value)
+    return normalized
+
+
+def build_phase2_vwap(cache_root: Path, output_root: Path, validation_dates: list[str]) -> Path:
+    """Build the reusable phase-2 indicator artifact and validation export."""
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    normalized_dates = _parse_validation_dates(validation_dates)
+    enriched = attach_daily_vwap_bands(scan_canonical_cache(cache_root).collect())
+    write_enriched_vwap_artifact(enriched, output_root)
+    write_vwap_validation_export(enriched, output_root, normalized_dates)
+    return output_root / "phase2_daily_vwap.parquet"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="vwap_revert")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    build = subparsers.add_parser("build-phase1-cache")
-    build.add_argument("--csv-root", type=Path, required=True)
-    build.add_argument("--output-root", type=Path, required=True)
-    build.add_argument("--holiday-calendar", type=Path)
+    phase1 = subparsers.add_parser("build-phase1-cache")
+    phase1.add_argument("--csv-root", type=Path, required=True)
+    phase1.add_argument("--output-root", type=Path, required=True)
+    phase1.add_argument("--holiday-calendar", type=Path)
+
+    phase2 = subparsers.add_parser("build-phase2-vwap")
+    phase2.add_argument("--cache-root", type=Path, required=True)
+    phase2.add_argument("--output-root", type=Path, required=True)
+    phase2.add_argument("--validation-date", dest="validation_dates", action="append", required=True)
     return parser
 
 
@@ -107,6 +134,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "build-phase1-cache":
         build_phase1_cache(args.csv_root, args.output_root, args.holiday_calendar)
+        return 0
+    if args.command == "build-phase2-vwap":
+        build_phase2_vwap(args.cache_root, args.output_root, args.validation_dates)
         return 0
     parser.error(f"Unknown command: {args.command}")
     return 2
