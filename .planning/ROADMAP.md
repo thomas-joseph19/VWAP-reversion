@@ -61,7 +61,7 @@ Plans:
 **Plans**: 2 plans
 Plans:
 - [x] 03-01-PLAN.md - Build deterministic prior-day RTH structural levels and row-aligned proximity features
-- [ ] 03-02-PLAN.md - Add structural artifacts, validation export, and CLI wiring
+- [x] 03-02-PLAN.md - Add structural artifacts, validation export, and CLI wiring
 
 ### Phase 4: Setup Detection
 **Goal**: System identifies candidate VWAP reversion setups during the trading window
@@ -151,7 +151,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Data Pipeline Foundation | 3/3 | Complete | 2026-04-02 |
 | 2. Daily VWAP Engine | 2/2 | Internally verified; external chart validation deferred | 2026-04-02 |
-| 3. Simple Structural Levels | 1/2 | In Progress | - |
+| 3. Simple Structural Levels | 2/2 | Internally verified; external chart validation deferred | 2026-04-02 |
 | 4. Setup Detection | 0/? | Not started | - |
 | 5. Trade Simulation Engine | 0/? | Not started | - |
 | 6. Core Analytics & Output | 0/? | Not started | - |
