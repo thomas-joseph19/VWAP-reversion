@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import polars as pl
 
 
@@ -18,6 +21,16 @@ _BAND_COLUMNS = [
     "daily_vwap_lower_3s",
     "daily_vwap_upper_4s",
     "daily_vwap_lower_4s",
+]
+_ENRICHED_ARTIFACT_NAME = "phase2_daily_vwap.parquet"
+_VALIDATION_EXPORT_NAME = "vwap_validation_export.csv"
+_VALIDATION_MANIFEST_NAME = "validation_sessions.json"
+_VALIDATION_COLUMNS = [
+    "trading_date",
+    "ts_recv_et",
+    "price",
+    "size",
+    *_BAND_COLUMNS,
 ]
 
 
@@ -82,3 +95,44 @@ def attach_daily_vwap_bands(df: pl.DataFrame) -> pl.DataFrame:
         .sort("__row")
         .drop("__row")
     )
+
+
+def write_enriched_vwap_artifact(enriched_df: pl.DataFrame, output_dir: Path) -> Path:
+    """Persist the row-aligned phase-2 dataset for downstream reuse."""
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    artifact_path = output_dir / _ENRICHED_ARTIFACT_NAME
+    enriched_df.write_parquet(artifact_path)
+    return artifact_path
+
+
+def write_vwap_validation_export(enriched_df: pl.DataFrame, output_dir: Path, validation_dates: list[str]) -> None:
+    """Write deterministic validation artifacts for manual chart comparison."""
+
+    normalized_dates = sorted(dict.fromkeys(validation_dates))
+    if not normalized_dates:
+        raise ValueError("validation_dates must include at least one YYYY-MM-DD value")
+
+    _require_columns(enriched_df, {"ts_recv_et", "trading_date", "price", "size", *_BAND_COLUMNS})
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    validation_dir = output_dir / "validation"
+    validation_dir.mkdir(parents=True, exist_ok=True)
+
+    write_enriched_vwap_artifact(enriched_df, output_dir)
+
+    comparison = (
+        enriched_df.with_columns(pl.col("trading_date").cast(pl.Utf8))
+        .filter(pl.col("trading_date").is_in(normalized_dates))
+        .sort(["trading_date", "ts_recv_et"])
+        .select(_VALIDATION_COLUMNS)
+    )
+    comparison.write_csv(validation_dir / _VALIDATION_EXPORT_NAME)
+
+    manifest = {
+        "validation_dates": normalized_dates,
+        "enriched_artifact": _ENRICHED_ARTIFACT_NAME,
+        "comparison_export": f"validation/{_VALIDATION_EXPORT_NAME}",
+        "row_count": comparison.height,
+    }
+    (validation_dir / _VALIDATION_MANIFEST_NAME).write_text(json.dumps(manifest, indent=2), encoding="utf-8")

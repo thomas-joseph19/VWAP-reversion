@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import UTC, date, datetime
 from pathlib import Path
+from uuid import uuid4
 
 import polars as pl
 
@@ -73,55 +75,71 @@ def _fixture_frame() -> pl.DataFrame:
     return pl.DataFrame(rows)
 
 
-def test_validation_export_contains_comparison_columns(tmp_path: Path) -> None:
+def _make_temp_dir() -> Path:
+    root = Path(".codex_tmp_test_runs")
+    root.mkdir(exist_ok=True)
+    path = root / uuid4().hex
+    path.mkdir()
+    return path
+
+
+def test_validation_export_contains_comparison_columns() -> None:
+    tmp_path = _make_temp_dir()
     enriched = attach_daily_vwap_bands(_fixture_frame())
     validation_dates = [f"2024-01-0{day}" for day in range(2, 7)]
 
-    write_vwap_validation_export(enriched, tmp_path, validation_dates)
+    try:
+        write_vwap_validation_export(enriched, tmp_path, validation_dates)
 
-    enriched_path = tmp_path / "phase2_daily_vwap.parquet"
-    comparison_path = tmp_path / "validation" / "vwap_validation_export.csv"
-    manifest_path = tmp_path / "validation" / "validation_sessions.json"
+        enriched_path = tmp_path / "phase2_daily_vwap.parquet"
+        comparison_path = tmp_path / "validation" / "vwap_validation_export.csv"
+        manifest_path = tmp_path / "validation" / "validation_sessions.json"
 
-    assert enriched_path.exists()
-    assert comparison_path.exists()
-    assert manifest_path.exists()
+        assert enriched_path.exists()
+        assert comparison_path.exists()
+        assert manifest_path.exists()
 
-    comparison = pl.read_csv(comparison_path, try_parse_dates=True)
-    assert comparison.columns == COMPARISON_COLUMNS
-    assert comparison["trading_date"].dt.strftime("%Y-%m-%d").unique().sort().to_list() == validation_dates
+        comparison = pl.read_csv(comparison_path, try_parse_dates=True)
+        assert comparison.columns == COMPARISON_COLUMNS
+        assert comparison["trading_date"].dt.strftime("%Y-%m-%d").unique().sort().to_list() == validation_dates
 
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["validation_dates"] == validation_dates
-    assert manifest["comparison_export"] == "validation/vwap_validation_export.csv"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert manifest["validation_dates"] == validation_dates
+        assert manifest["comparison_export"] == "validation/vwap_validation_export.csv"
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
 
 
-def test_cli_writes_indicator_and_validation_artifacts(tmp_path: Path) -> None:
+def test_cli_writes_indicator_and_validation_artifacts() -> None:
+    tmp_path = _make_temp_dir()
     cache_root = tmp_path / "canonical_cache"
     output_root = tmp_path / "phase2_output"
-    write_canonical_cache(_fixture_frame(), cache_root)
+    try:
+        write_canonical_cache(_fixture_frame(), cache_root)
 
-    exit_code = main(
-        [
-            "build-phase2-vwap",
-            "--cache-root",
-            str(cache_root),
-            "--output-root",
-            str(output_root),
-            "--validation-date",
-            "2024-01-02",
-            "--validation-date",
-            "2024-01-03",
-            "--validation-date",
-            "2024-01-04",
-            "--validation-date",
-            "2024-01-05",
-            "--validation-date",
-            "2024-01-06",
-        ]
-    )
+        exit_code = main(
+            [
+                "build-phase2-vwap",
+                "--cache-root",
+                str(cache_root),
+                "--output-root",
+                str(output_root),
+                "--validation-date",
+                "2024-01-02",
+                "--validation-date",
+                "2024-01-03",
+                "--validation-date",
+                "2024-01-04",
+                "--validation-date",
+                "2024-01-05",
+                "--validation-date",
+                "2024-01-06",
+            ]
+        )
 
-    assert exit_code == 0
-    assert (output_root / "phase2_daily_vwap.parquet").exists()
-    assert (output_root / "validation" / "vwap_validation_export.csv").exists()
-    assert (output_root / "validation" / "validation_sessions.json").exists()
+        assert exit_code == 0
+        assert (output_root / "phase2_daily_vwap.parquet").exists()
+        assert (output_root / "validation" / "vwap_validation_export.csv").exists()
+        assert (output_root / "validation" / "validation_sessions.json").exists()
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
