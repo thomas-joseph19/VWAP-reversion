@@ -32,3 +32,9 @@ def compute_daily_vwap(df: pl.DataFrame) -> pl.DataFrame:
         pl.col("notional").cum_sum().over("trading_date").alias("cum_notional"),
         pl.col("size").cum_sum().over("trading_date").alias("cum_volume"),
     ).with_columns((pl.col("cum_notional") / pl.col("cum_volume")).alias("daily_vwap"))
+
+
+def attach_daily_vwap_bands(df: pl.DataFrame) -> pl.DataFrame:
+    """Attach daily VWAP band columns to the full session frame."""
+
+    raise NotImplementedError
