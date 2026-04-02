@@ -45,7 +45,7 @@ Accurately measure the statistical edge of entering NQ reversion trades when pri
 - ES or other instruments — NQ front month only
 - Options/GEX data integration — gamma regime derived from realized vol
 - GUI / dashboard — command-line backtest with file output
-- Machine learning / optimization — testing the stated model as-is
+- Machine learning / optimization — deferred to v2 milestone (feature engineering, classification models, RL optimization, walk-forward testing)
 
 ## Context
 
