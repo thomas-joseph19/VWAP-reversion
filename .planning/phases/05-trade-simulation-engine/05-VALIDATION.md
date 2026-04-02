@@ -1,9 +1,9 @@
 ---
 phase: 05
 slug: trade-simulation-engine
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: ready
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-04-02
 ---
 
@@ -45,7 +45,7 @@ created: 2026-04-02
 | 05-02-02 | 02 | 2 | TSIM-07 | unit | `python -m pytest tests/indicators/test_trade_simulation.py::test_stop_loss_uses_executable_mae_and_adverse_first_ordering -x` | ❌ W0 | ⬜ pending |
 | 05-02-03 | 02 | 2 | TSIM-08 | unit | `python -m pytest tests/indicators/test_trade_simulation.py::test_session_end_forces_exit_at_1600_et -x` | ❌ W0 | ⬜ pending |
 | 05-03-01 | 03 | 3 | TSIM-05 | unit | `python -m pytest tests/indicators/test_trade_simulation.py::test_overlapping_setups_are_skipped_while_position_active -x` | ❌ W0 | ⬜ pending |
-| 05-03-02 | 03 | 3 | TSIM-01, TSIM-02, TSIM-03, TSIM-04, TSIM-05, TSIM-07, TSIM-08 | integration | `python -m pytest tests/indicators/test_trade_simulation_validation.py -x` | ❌ W0 | ⬜ pending |
+| 05-03-02 | 03 | 3 | TSIM-01, TSIM-02, TSIM-03, TSIM-04, TSIM-05, TSIM-07, TSIM-08 | integration | `python -m pytest tests/indicators/test_trade_simulation.py tests/indicators/test_trade_simulation_validation.py -q` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -75,6 +75,6 @@ created: 2026-04-02
 - [ ] Wave 0 covers all MISSING references
 - [ ] No watch-mode flags
 - [ ] Feedback latency < 30s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-04-02
