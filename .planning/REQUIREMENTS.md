@@ -29,13 +29,13 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Structural Levels
 
-- [ ] **STRC-01**: System computes prior-day value area — VAH, VAL, and POC — from trade volume distribution
+- [x] **STRC-01**: System computes prior-day value area — VAH, VAL, and POC — from trade volume distribution
 - [ ] **STRC-02**: System computes overnight value area edges (globex session before RTH)
 - [ ] **STRC-03**: System builds daily volume profiles (price × volume histogram at configurable tick resolution)
 - [ ] **STRC-04**: System builds HTF volume profile (rolling 180-day composite) without look-ahead bias
 - [ ] **STRC-05**: System identifies Low Volume Nodes (LVNs) from volume profiles
 - [ ] **STRC-06**: System identifies balance area extremes from HTF volume profiles
-- [ ] **STRC-07**: System detects when price is within configurable proximity of a structural level (default ±10 NQ points)
+- [x] **STRC-07**: System detects when price is within configurable proximity of a structural level (default ±10 NQ points)
 
 ### Regime Classification
 
@@ -123,13 +123,13 @@ Machine learning enhancement of the mechanical model.
 | VWAP-04 | Phase 8 | Pending |
 | VWAP-05 | Phase 8 | Pending |
 | VWAP-06 | Phase 2 | Pending |
-| STRC-01 | Phase 3 | Pending |
+| STRC-01 | Phase 3 | Complete |
 | STRC-02 | Phase 7 | Pending |
 | STRC-03 | Phase 7 | Pending |
 | STRC-04 | Phase 7 | Pending |
 | STRC-05 | Phase 7 | Pending |
 | STRC-06 | Phase 7 | Pending |
-| STRC-07 | Phase 3 | Pending |
+| STRC-07 | Phase 3 | Complete |
 | REGM-01 | Phase 8 | Pending |
 | REGM-02 | Phase 8 | Pending |
 | REGM-03 | Phase 8 | Pending |
