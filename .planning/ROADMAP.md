@@ -58,7 +58,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Prior-day VAH, VAL, and POC values are computed correctly for any session (verifiable against a volume profile chart)
   2. System detects when current price is within configurable proximity (default ±10 NQ points) of any structural level
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 03-01-PLAN.md - Build deterministic prior-day RTH structural levels and row-aligned proximity features
+- [ ] 03-02-PLAN.md - Add structural artifacts, validation export, and CLI wiring
 
 ### Phase 4: Setup Detection
 **Goal**: System identifies candidate VWAP reversion setups during the trading window
