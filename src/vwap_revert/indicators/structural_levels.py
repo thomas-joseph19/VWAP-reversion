@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import timedelta
+import json
+from pathlib import Path
 
 import polars as pl
 
@@ -16,6 +18,27 @@ _LEVEL_COLUMNS = ["prior_rth_vah", "prior_rth_val", "prior_rth_poc"]
 _QUALITY_MISSING = "missing_prior_session"
 _QUALITY_UNUSABLE = "unusable_prior_session"
 _QUALITY_OK = "ok"
+_SESSION_ARTIFACT_NAME = "phase3_structural_levels.parquet"
+_ENRICHED_ARTIFACT_NAME = "phase3_structural_enriched.parquet"
+_VALIDATION_EXPORT_NAME = "structural_validation_export.csv"
+_VALIDATION_MANIFEST_NAME = "validation_sessions.json"
+_VALIDATION_COLUMNS = [
+    "trading_date",
+    "ts_recv_et",
+    "structural_reference_price",
+    "source_trading_date",
+    "prior_rth_vah",
+    "prior_rth_val",
+    "prior_rth_poc",
+    "distance_to_prior_rth_vah",
+    "distance_to_prior_rth_val",
+    "distance_to_prior_rth_poc",
+    "nearest_structural_level",
+    "nearest_structural_distance",
+    "structural_levels_within_threshold",
+    "levels_available",
+    "quality_status",
+]
 
 
 @dataclass(frozen=True)
@@ -231,6 +254,59 @@ def attach_prior_day_structural_levels(df: pl.DataFrame, proximity_threshold_poi
         .sort("__row")
         .drop("__row", "__nearest")
     )
+
+
+def write_structural_levels_artifacts(
+    df: pl.DataFrame,
+    output_dir: Path,
+    proximity_threshold_points: float = 10.0,
+) -> tuple[Path, Path]:
+    """Persist the phase-3 session and row-aligned structural artifacts."""
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    session_levels = compute_prior_day_structural_levels(df)
+    enriched = attach_prior_day_structural_levels(df, proximity_threshold_points=proximity_threshold_points)
+
+    session_path = output_dir / _SESSION_ARTIFACT_NAME
+    enriched_path = output_dir / _ENRICHED_ARTIFACT_NAME
+    session_levels.write_parquet(session_path)
+    enriched.write_parquet(enriched_path)
+    return session_path, enriched_path
+
+
+def write_structural_validation_export(
+    enriched_df: pl.DataFrame,
+    output_dir: Path,
+    validation_dates: list[str],
+) -> None:
+    """Write manual validation exports for selected structural sessions."""
+
+    normalized_dates = sorted(dict.fromkeys(validation_dates))
+    if not normalized_dates:
+        raise ValueError("validation_dates must include at least one YYYY-MM-DD value")
+
+    _require_columns(enriched_df, set(_VALIDATION_COLUMNS))
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    validation_dir = output_dir / "validation"
+    validation_dir.mkdir(parents=True, exist_ok=True)
+
+    comparison = (
+        enriched_df.with_columns(pl.col("trading_date").cast(pl.Utf8))
+        .filter(pl.col("trading_date").is_in(normalized_dates))
+        .sort(["trading_date", "ts_recv_et"])
+        .select(_VALIDATION_COLUMNS)
+    )
+    comparison.write_csv(validation_dir / _VALIDATION_EXPORT_NAME)
+
+    manifest = {
+        "validation_dates": normalized_dates,
+        "session_artifact": _SESSION_ARTIFACT_NAME,
+        "enriched_artifact": _ENRICHED_ARTIFACT_NAME,
+        "comparison_export": f"validation/{_VALIDATION_EXPORT_NAME}",
+        "row_count": comparison.height,
+    }
+    (validation_dir / _VALIDATION_MANIFEST_NAME).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
 
 def _pick_nearest_level(value: dict[str, dict[str, float | str | None]]) -> dict[str, float | str | None]:

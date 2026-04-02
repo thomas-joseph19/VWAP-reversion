@@ -13,6 +13,10 @@ import polars as pl
 from .data_pipeline.cache import scan_canonical_cache, write_canonical_cache
 from .data_pipeline.contracts import add_contract_trading_date, apply_contract_map, build_daily_contract_map
 from .data_pipeline.ingest import collect_sample_day
+from .indicators.structural_levels import (
+    write_structural_levels_artifacts,
+    write_structural_validation_export,
+)
 from .indicators.vwap import attach_daily_vwap_bands, write_enriched_vwap_artifact, write_vwap_validation_export
 from .data_pipeline.manifest import build_manifest
 from .data_pipeline.quality import build_quality_report, detect_intraday_gaps
@@ -113,6 +117,36 @@ def build_phase2_vwap(cache_root: Path, output_root: Path, validation_dates: lis
     return output_root / "phase2_daily_vwap.parquet"
 
 
+def _parse_phase3_validation_dates(validation_dates: list[str]) -> list[str]:
+    normalized = sorted(dict.fromkeys(validation_dates))
+    if not normalized:
+        raise ValueError("build-phase3-structural-levels requires at least one --validation-date value")
+
+    for value in normalized:
+        date.fromisoformat(value)
+    return normalized
+
+
+def build_phase3_structural_levels(
+    cache_root: Path,
+    output_root: Path,
+    validation_dates: list[str],
+    proximity_threshold_points: float = 10.0,
+) -> Path:
+    """Build the reusable phase-3 structural artifacts and validation export."""
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    normalized_dates = _parse_phase3_validation_dates(validation_dates)
+    source_df = scan_canonical_cache(cache_root).collect()
+    _, enriched_path = write_structural_levels_artifacts(
+        source_df,
+        output_root,
+        proximity_threshold_points=proximity_threshold_points,
+    )
+    write_structural_validation_export(pl.read_parquet(enriched_path), output_root, normalized_dates)
+    return output_root / "phase3_structural_enriched.parquet"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="vwap_revert")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -126,6 +160,12 @@ def build_parser() -> argparse.ArgumentParser:
     phase2.add_argument("--cache-root", type=Path, required=True)
     phase2.add_argument("--output-root", type=Path, required=True)
     phase2.add_argument("--validation-date", dest="validation_dates", action="append", required=True)
+
+    phase3 = subparsers.add_parser("build-phase3-structural-levels")
+    phase3.add_argument("--cache-root", type=Path, required=True)
+    phase3.add_argument("--output-root", type=Path, required=True)
+    phase3.add_argument("--validation-date", dest="validation_dates", action="append", required=True)
+    phase3.add_argument("--proximity-threshold-points", type=float, default=10.0)
     return parser
 
 
@@ -137,6 +177,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "build-phase2-vwap":
         build_phase2_vwap(args.cache_root, args.output_root, args.validation_dates)
+        return 0
+    if args.command == "build-phase3-structural-levels":
+        build_phase3_structural_levels(
+            args.cache_root,
+            args.output_root,
+            args.validation_dates,
+            proximity_threshold_points=args.proximity_threshold_points,
+        )
         return 0
     parser.error(f"Unknown command: {args.command}")
     return 2
