@@ -13,7 +13,9 @@ import polars as pl
 from .data_pipeline.cache import scan_canonical_cache, write_canonical_cache
 from .data_pipeline.contracts import add_contract_trading_date, apply_contract_map, build_daily_contract_map
 from .data_pipeline.ingest import collect_sample_day
+from .indicators.setup_detection import write_setup_detection_artifacts, write_setup_validation_export
 from .indicators.structural_levels import (
+    attach_prior_day_structural_levels,
     write_structural_levels_artifacts,
     write_structural_validation_export,
 )
@@ -147,6 +149,44 @@ def build_phase3_structural_levels(
     return output_root / "phase3_structural_enriched.parquet"
 
 
+def _parse_phase4_validation_dates(validation_dates: list[str]) -> list[str]:
+    normalized = sorted(dict.fromkeys(validation_dates))
+    if not normalized:
+        raise ValueError("build-phase4-setup-detection requires at least one --validation-date value")
+
+    for value in normalized:
+        date.fromisoformat(value)
+    return normalized
+
+
+def build_phase4_setup_detection(
+    cache_root: Path,
+    output_root: Path,
+    validation_dates: list[str],
+    proximity_threshold_points: float = 10.0,
+    min_sigma: float = 1.7,
+    max_sigma: float = 3.0,
+) -> Path:
+    """Build the reusable phase-4 setup-detection artifacts and validation export."""
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    normalized_dates = _parse_phase4_validation_dates(validation_dates)
+    source_df = scan_canonical_cache(cache_root).collect()
+    vwap_enriched = attach_daily_vwap_bands(source_df)
+    structural_enriched = attach_prior_day_structural_levels(
+        vwap_enriched,
+        proximity_threshold_points=proximity_threshold_points,
+    )
+    enriched_path, _ = write_setup_detection_artifacts(
+        structural_enriched,
+        output_root,
+        min_sigma=min_sigma,
+        max_sigma=max_sigma,
+    )
+    write_setup_validation_export(pl.read_parquet(enriched_path), output_root, normalized_dates)
+    return output_root / "phase4_setup_log.parquet"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="vwap_revert")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -166,6 +206,14 @@ def build_parser() -> argparse.ArgumentParser:
     phase3.add_argument("--output-root", type=Path, required=True)
     phase3.add_argument("--validation-date", dest="validation_dates", action="append", required=True)
     phase3.add_argument("--proximity-threshold-points", type=float, default=10.0)
+
+    phase4 = subparsers.add_parser("build-phase4-setup-detection")
+    phase4.add_argument("--cache-root", type=Path, required=True)
+    phase4.add_argument("--output-root", type=Path, required=True)
+    phase4.add_argument("--validation-date", dest="validation_dates", action="append", required=True)
+    phase4.add_argument("--proximity-threshold-points", type=float, default=10.0)
+    phase4.add_argument("--min-sigma", type=float, default=1.7)
+    phase4.add_argument("--max-sigma", type=float, default=3.0)
     return parser
 
 
@@ -184,6 +232,16 @@ def main(argv: list[str] | None = None) -> int:
             args.output_root,
             args.validation_dates,
             proximity_threshold_points=args.proximity_threshold_points,
+        )
+        return 0
+    if args.command == "build-phase4-setup-detection":
+        build_phase4_setup_detection(
+            args.cache_root,
+            args.output_root,
+            args.validation_dates,
+            proximity_threshold_points=args.proximity_threshold_points,
+            min_sigma=args.min_sigma,
+            max_sigma=args.max_sigma,
         )
         return 0
     parser.error(f"Unknown command: {args.command}")

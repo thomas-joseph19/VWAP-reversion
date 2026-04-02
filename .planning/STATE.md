@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Awaiting Phase 03 human verification
-stopped_at: Phase 03 implementation complete; waiting on external structural chart validation
-last_updated: "2026-04-02T18:15:00Z"
+status: Phase 04 implemented; manual setup-log validation pending
+stopped_at: Phase 04 code complete; waiting on setup-log review and Phase 2/3 external validation debt remains
+last_updated: "2026-04-02T19:30:00Z"
 progress:
   total_phases: 10
-  completed_phases: 2
-  total_plans: 7
-  completed_plans: 7
+  completed_phases: 3
+  total_plans: 9
+  completed_plans: 9
 ---
 
 # Project State
@@ -19,18 +19,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Accurately measure the statistical edge of NQ VWAP reversion trades at structural levels during early NY session across volatility regimes.
-**Current focus:** Phase 03 - simple-structural-levels
+**Current focus:** Phase 04 - setup-detection
 
 ## Current Position
 
-Phase: 03 (simple-structural-levels) - HUMAN VERIFICATION NEEDED
+Phase: 04 (setup-detection) - HUMAN VERIFICATION NEEDED
 Plan: 2 of 2
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 7
+- Total plans completed: 9
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -41,15 +41,18 @@ Plan: 2 of 2
 | 01 | 3 | - | - |
 | 02 | 2 | - | - |
 | 03 | 2 | - | - |
+| 04 | 2 | - | - |
 
 **Recent Trend:**
 
-- Last 5 plans: 01-03, 02-01, 02-02, 03-01, 03-02
+- Last 5 plans: 02-02, 03-01, 03-02, 04-01, 04-02
 - Trend: steady
 
 *Updated after each plan completion*
 | Phase 03-simple-structural-levels P01 | 20 min | 2 tasks | 3 files |
 | Phase 03-simple-structural-levels P02 | 12 min | 2 tasks | 4 files |
+| Phase 04-setup-detection P01 | inline | 2 tasks | 4 files |
+| Phase 04-setup-detection P02 | inline | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -69,6 +72,9 @@ Recent decisions affecting current work:
 - [Phase 03-simple-structural-levels]: Used session VWAP as the POC tie-break center, then lower price, and expanded value area contiguously by adjacent incremental volume with lower-price ties.
 - [Phase 03-simple-structural-levels]: Mapped each trading_date only to the immediately previous calendar date and surfaced explicit missing or unusable quality states instead of backfilling older sessions.
 - [Phase 03-simple-structural-levels]: Mirrored the Phase 2 artifact pattern with deterministic parquet outputs plus a validation CSV and manifest for manual chart checks.
+- [Phase 04-setup-detection]: Auto-selected an event-style detector that emits one setup when VWAP extension, structural proximity, and time-window predicates first become true together.
+- [Phase 04-setup-detection]: Default setup thresholds use a signed sigma-distance range of 1.7 to 3.0 during the 9:30-11:30 ET window, with nullable regime placeholders carried forward for later enrichment.
+- [Phase 04-setup-detection]: Phase 4 now writes an enriched row-level parquet, a compact setup log, and a deterministic validation export from one canonical-cache CLI command.
 
 ### Pending Todos
 
@@ -78,10 +84,11 @@ None yet.
 
 - External chart-platform validation for Phase 2 is deferred debt.
 - External chart-platform validation for Phase 3 is deferred debt.
+- Manual setup-log validation for Phase 4 is still pending.
 - Continuation failure definition from BBO data is the weakest link; expect iterative refinement in Phase 9.
 
 ## Session Continuity
 
-Last session: 2026-04-02T18:15:00Z
-Stopped at: Phase 03 implementation complete; waiting on external structural chart validation
-Resume file: .planning/phases/03-simple-structural-levels/03-HUMAN-UAT.md
+Last session: 2026-04-02T19:30:00Z
+Stopped at: Phase 04 code complete; waiting on setup-log review
+Resume file: .planning/phases/04-setup-detection/04-HUMAN-UAT.md

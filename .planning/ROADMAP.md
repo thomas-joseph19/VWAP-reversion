@@ -49,7 +49,10 @@ Plans:
   1. Daily VWAP values match TradingView or NinjaTrader on at least 5 manually verified sessions (within 0.25 NQ points)
   2. Standard deviation bands (1σ-4σ) use the correct volume-weighted expanding formula — not rolling window std
   3. VWAP and band values are output in a format enabling side-by-side comparison with a reference platform
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [x] 02-01-PLAN.md - Build the reusable daily VWAP and sigma-band indicator core
+- [x] 02-02-PLAN.md - Add validation exports and CLI wiring for deterministic Phase 2 rebuilds
 
 ### Phase 3: Simple Structural Levels
 **Goal**: Prior-day value area levels available as reference points for signal detection
@@ -72,7 +75,10 @@ Plans:
   2. System detects when price is extended from VWAP within the configured deviation range (default 1.7σ-3.0σ)
   3. System identifies setups where VWAP extension AND structural level proximity coincide within the time window
   4. Each detected setup is logged with full context — sigma level, which structural level, timestamp, gamma regime (if available), bid/ask at signal
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [x] 04-01-PLAN.md - Build the row-level setup detector core with ET gating, signed sigma thresholds, and transition-based event emission
+- [x] 04-02-PLAN.md - Add Phase 04 artifacts, validation exports, and CLI wiring for compact setup-log rebuilds
 
 ### Phase 5: Trade Simulation Engine
 **Goal**: Mechanical trade replay producing realistic per-trade results with transaction cost modeling
@@ -152,7 +158,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Data Pipeline Foundation | 3/3 | Complete | 2026-04-02 |
 | 2. Daily VWAP Engine | 2/2 | Internally verified; external chart validation deferred | 2026-04-02 |
 | 3. Simple Structural Levels | 2/2 | Internally verified; external chart validation deferred | 2026-04-02 |
-| 4. Setup Detection | 0/? | Not started | - |
+| 4. Setup Detection | 2/2 | Implemented; manual setup-log validation pending | 2026-04-02 |
 | 5. Trade Simulation Engine | 0/? | Not started | - |
 | 6. Core Analytics & Output | 0/? | Not started | - |
 | 7. Volume Profile Engine | 0/? | Not started | - |
