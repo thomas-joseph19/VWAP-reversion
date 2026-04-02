@@ -90,7 +90,10 @@ Plans:
   3. Only one position is open at a time — overlapping setups during an active trade are skipped
   4. Stop-loss triggers when maximum adverse excursion exceeds the configured threshold
   5. Any open position is force-closed at session end (16:00 ET)
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 05-01-PLAN.md - Build and test the sequential quote-side replay engine for immediate setup-driven trades
+- [ ] 05-02-PLAN.md - Add Phase 5 artifacts, validation exports, and CLI wiring for deterministic rebuilds
 
 ### Phase 6: Core Analytics & Output
 **Goal**: Backtest results quantified with standard performance metrics and exported for analysis
