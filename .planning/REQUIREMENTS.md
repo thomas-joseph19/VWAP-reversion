@@ -109,57 +109,57 @@ Machine learning enhancement of the mechanical model.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DATA-01 | — | Pending |
-| DATA-02 | — | Pending |
-| DATA-03 | — | Pending |
-| DATA-04 | — | Pending |
-| DATA-05 | — | Pending |
-| DATA-06 | — | Pending |
-| DATA-07 | — | Pending |
-| DATA-08 | — | Pending |
-| VWAP-01 | — | Pending |
-| VWAP-02 | — | Pending |
-| VWAP-03 | — | Pending |
-| VWAP-04 | — | Pending |
-| VWAP-05 | — | Pending |
-| VWAP-06 | — | Pending |
-| STRC-01 | — | Pending |
-| STRC-02 | — | Pending |
-| STRC-03 | — | Pending |
-| STRC-04 | — | Pending |
-| STRC-05 | — | Pending |
-| STRC-06 | — | Pending |
-| STRC-07 | — | Pending |
-| REGM-01 | — | Pending |
-| REGM-02 | — | Pending |
-| REGM-03 | — | Pending |
-| SGNL-01 | — | Pending |
-| SGNL-02 | — | Pending |
-| SGNL-03 | — | Pending |
-| SGNL-04 | — | Pending |
-| SGNL-05 | — | Pending |
-| TSIM-01 | — | Pending |
-| TSIM-02 | — | Pending |
-| TSIM-03 | — | Pending |
-| TSIM-04 | — | Pending |
-| TSIM-05 | — | Pending |
-| TSIM-06 | — | Pending |
-| TSIM-07 | — | Pending |
-| TSIM-08 | — | Pending |
-| ANLY-01 | — | Pending |
-| ANLY-02 | — | Pending |
-| ANLY-03 | — | Pending |
-| ANLY-04 | — | Pending |
-| ANLY-05 | — | Pending |
-| ANLY-06 | — | Pending |
-| ANLY-07 | — | Pending |
-| ANLY-08 | — | Pending |
+| DATA-01 | Phase 1 | Pending |
+| DATA-02 | Phase 1 | Pending |
+| DATA-03 | Phase 1 | Pending |
+| DATA-04 | Phase 1 | Pending |
+| DATA-05 | Phase 1 | Pending |
+| DATA-06 | Phase 1 | Pending |
+| DATA-07 | Phase 1 | Pending |
+| DATA-08 | Phase 1 | Pending |
+| VWAP-01 | Phase 2 | Pending |
+| VWAP-02 | Phase 2 | Pending |
+| VWAP-03 | Phase 4 | Pending |
+| VWAP-04 | Phase 8 | Pending |
+| VWAP-05 | Phase 8 | Pending |
+| VWAP-06 | Phase 2 | Pending |
+| STRC-01 | Phase 3 | Pending |
+| STRC-02 | Phase 7 | Pending |
+| STRC-03 | Phase 7 | Pending |
+| STRC-04 | Phase 7 | Pending |
+| STRC-05 | Phase 7 | Pending |
+| STRC-06 | Phase 7 | Pending |
+| STRC-07 | Phase 3 | Pending |
+| REGM-01 | Phase 8 | Pending |
+| REGM-02 | Phase 8 | Pending |
+| REGM-03 | Phase 8 | Pending |
+| SGNL-01 | Phase 4 | Pending |
+| SGNL-02 | Phase 4 | Pending |
+| SGNL-03 | Phase 4 | Pending |
+| SGNL-04 | Phase 9 | Pending |
+| SGNL-05 | Phase 9 | Pending |
+| TSIM-01 | Phase 5 | Pending |
+| TSIM-02 | Phase 5 | Pending |
+| TSIM-03 | Phase 5 | Pending |
+| TSIM-04 | Phase 5 | Pending |
+| TSIM-05 | Phase 5 | Pending |
+| TSIM-06 | Phase 9 | Pending |
+| TSIM-07 | Phase 5 | Pending |
+| TSIM-08 | Phase 5 | Pending |
+| ANLY-01 | Phase 6 | Pending |
+| ANLY-02 | Phase 6 | Pending |
+| ANLY-03 | Phase 6 | Pending |
+| ANLY-04 | Phase 10 | Pending |
+| ANLY-05 | Phase 10 | Pending |
+| ANLY-06 | Phase 10 | Pending |
+| ANLY-07 | Phase 10 | Pending |
+| ANLY-08 | Phase 10 | Pending |
 
 **Coverage:**
-- v1 requirements: 38 total
-- Mapped to phases: 0
-- Unmapped: 38 ⚠️
+- v1 requirements: 45 total
+- Mapped to phases: 45
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-01*
-*Last updated: 2026-04-01 after initial definition*
+*Last updated: 2026-04-01 after roadmap creation*
