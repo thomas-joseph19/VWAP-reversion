@@ -35,7 +35,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. All timestamps display in US/Eastern with correct DST handling (verifiable at known DST transition dates — 6 transitions in dataset)
   4. Session boundaries (RTH 9:30-16:00 ET, overnight 18:00-9:30 ET, full 24h) are correctly labeled for any given trading day
   5. First load converts CSV→Parquet and caches; subsequent loads of the full dataset complete in under 30 seconds
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 01-01-PLAN.md - Bootstrap the Python package and typed raw-ingestion foundation
+- [ ] 01-02-PLAN.md - Implement causal front-month mapping and ET session labeling
+- [ ] 01-03-PLAN.md - Build canonical parquet cache, quality reporting, and Phase 1 CLI
 
 ### Phase 2: Daily VWAP Engine
 **Goal**: Accurate daily VWAP and deviation bands that match reference charting platforms
@@ -142,7 +146,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Data Pipeline Foundation | 0/? | Not started | - |
+| 1. Data Pipeline Foundation | 0/3 | Planned | - |
 | 2. Daily VWAP Engine | 0/? | Not started | - |
 | 3. Simple Structural Levels | 0/? | Not started | - |
 | 4. Setup Detection | 0/? | Not started | - |
