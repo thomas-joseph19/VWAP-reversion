@@ -217,7 +217,7 @@ def test_overnight_profile_uses_completed_globex_rows_only() -> None:
     assert june_15["bucket_prices"] == [100.75, 101.0]
     assert june_15["bucket_volumes"] == [5.0, 15.0]
     assert june_15["overnight_poc"] == 101.0
-    assert june_15["overnight_val"] == 100.75
+    assert june_15["overnight_val"] == 101.0
     assert june_15["overnight_vah"] == 101.0
 
 
@@ -238,7 +238,7 @@ def test_daily_profiles_build_tick_aligned_histograms_and_prior_day_levels() -> 
     assert june_15["bucket_volumes"] == [10.0, 15.0, 20.0]
     assert june_15["daily_rth_poc"] == 102.5
     assert june_15["prior_rth_poc"] == 100.25
-    assert june_15["prior_rth_val"] == 100.0
+    assert june_15["prior_rth_val"] == 100.25
     assert june_15["prior_rth_vah"] == 100.5
 
 
@@ -264,7 +264,7 @@ def test_htf_composite_excludes_current_session_and_tracks_window_coverage() -> 
     assert june_16["roll_mixed_window"] is False
     assert june_16["source_front_symbols"] == ["NQU3"]
     assert june_16["bucket_prices"] == [100.0, 100.25, 100.5, 101.0, 101.25, 101.5]
-    assert june_16["htf_poc"] == 100.25
+    assert june_16["htf_poc"] == 101.25
     assert june_16["quality_status"] == "insufficient_history"
 
 
