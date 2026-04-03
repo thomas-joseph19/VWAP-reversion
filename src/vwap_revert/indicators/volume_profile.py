@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+import json
 from pathlib import Path
 
 import polars as pl
@@ -20,6 +21,8 @@ PHASE7_DAILY_ARTIFACT_NAME = "phase7_daily_profiles.parquet"
 PHASE7_OVERNIGHT_ARTIFACT_NAME = "phase7_overnight_profiles.parquet"
 PHASE7_HTF_ARTIFACT_NAME = "phase7_htf_profiles.parquet"
 PHASE7_ENRICHED_ARTIFACT_NAME = "phase7_volume_profile_enriched.parquet"
+VOLUME_PROFILE_VALIDATION_EXPORT_NAME = "volume_profile_validation_export.csv"
+VOLUME_PROFILE_VALIDATION_MANIFEST_NAME = "validation_sessions.json"
 
 _REQUIRED_COLUMNS = {
     "trading_date",
@@ -46,6 +49,26 @@ _PHASE7_LEVEL_ORDER = (
     "htf_lvn_above",
     "htf_lvn_below",
 )
+_VALIDATION_COLUMNS = [
+    "trading_date",
+    "ts_recv_et",
+    "prior_rth_poc",
+    "prior_rth_vah",
+    "prior_rth_val",
+    "overnight_poc",
+    "overnight_vah",
+    "overnight_val",
+    "htf_poc",
+    "htf_vah",
+    "htf_val",
+    "htf_nearest_lvn_above",
+    "htf_nearest_lvn_below",
+    "phase7_nearest_structural_level",
+    "phase7_nearest_structural_distance",
+    "phase7_quality_status",
+    "htf_source_session_count",
+    "htf_roll_mixed_window",
+]
 
 
 @dataclass(frozen=True)
@@ -614,3 +637,47 @@ def write_volume_profile_artifacts(
     htf_profiles.write_parquet(htf_path)
     enriched.write_parquet(enriched_path)
     return daily_path, overnight_path, htf_path, enriched_path
+
+
+def write_volume_profile_validation_export(
+    enriched_df: pl.DataFrame,
+    output_dir: Path,
+    validation_dates: list[str],
+    bucket_size: float = DEFAULT_BUCKET_SIZE,
+    htf_lookback_sessions: int = DEFAULT_HTF_LOOKBACK_SESSIONS,
+) -> None:
+    """Write deterministic Phase 7 validation artifacts for selected sessions."""
+
+    normalized_dates = sorted(dict.fromkeys(validation_dates))
+    if not normalized_dates:
+        raise ValueError("validation_dates must include at least one YYYY-MM-DD value")
+
+    _require_columns(enriched_df, set(_VALIDATION_COLUMNS))
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    validation_dir = output_dir / "validation"
+    validation_dir.mkdir(parents=True, exist_ok=True)
+
+    comparison = (
+        enriched_df.with_columns(pl.col("trading_date").cast(pl.Utf8))
+        .filter(pl.col("trading_date").is_in(normalized_dates))
+        .sort(["trading_date", "ts_recv_et"])
+        .select(_VALIDATION_COLUMNS)
+    )
+    comparison.write_csv(validation_dir / VOLUME_PROFILE_VALIDATION_EXPORT_NAME)
+
+    manifest = {
+        "validation_dates": normalized_dates,
+        "bucket_size": bucket_size,
+        "htf_lookback_sessions": htf_lookback_sessions,
+        "daily_artifact": PHASE7_DAILY_ARTIFACT_NAME,
+        "overnight_artifact": PHASE7_OVERNIGHT_ARTIFACT_NAME,
+        "htf_artifact": PHASE7_HTF_ARTIFACT_NAME,
+        "enriched_artifact": PHASE7_ENRICHED_ARTIFACT_NAME,
+        "validation_export": f"validation/{VOLUME_PROFILE_VALIDATION_EXPORT_NAME}",
+        "row_count": comparison.height,
+    }
+    (validation_dir / VOLUME_PROFILE_VALIDATION_MANIFEST_NAME).write_text(
+        json.dumps(manifest, indent=2),
+        encoding="utf-8",
+    )

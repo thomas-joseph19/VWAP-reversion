@@ -10,6 +10,7 @@ import time
 
 import polars as pl
 
+from .analytics import write_core_analytics_artifacts
 from .data_pipeline.cache import scan_canonical_cache, write_canonical_cache
 from .data_pipeline.contracts import add_contract_trading_date, apply_contract_map, build_daily_contract_map
 from .data_pipeline.ingest import collect_sample_day
@@ -18,6 +19,11 @@ from .indicators.structural_levels import (
     attach_prior_day_structural_levels,
     write_structural_levels_artifacts,
     write_structural_validation_export,
+)
+from .indicators.volume_profile import (
+    attach_volume_profile_levels,
+    write_volume_profile_artifacts,
+    write_volume_profile_validation_export,
 )
 from .indicators.vwap import attach_daily_vwap_bands, write_enriched_vwap_artifact, write_vwap_validation_export
 from .simulation import SimulationConfig, write_trade_simulation_artifacts
@@ -224,6 +230,70 @@ def build_phase5_trade_simulation(
     return trade_log_path
 
 
+def _parse_phase6_validation_dates(validation_dates: list[str]) -> list[str]:
+    normalized = sorted(dict.fromkeys(validation_dates))
+    if not normalized:
+        raise ValueError("build-phase6-core-analytics requires at least one --validation-date value")
+
+    for value in normalized:
+        date.fromisoformat(value)
+    return normalized
+
+
+def build_phase6_core_analytics(phase5_root: Path, output_root: Path, validation_dates: list[str]) -> Path:
+    """Build deterministic Phase 6 analytics artifacts from Phase 5 outputs."""
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    normalized_dates = _parse_phase6_validation_dates(validation_dates)
+    trade_log_csv_path, _ = write_core_analytics_artifacts(
+        phase5_root=phase5_root,
+        output_root=output_root,
+        validation_dates=normalized_dates,
+    )
+    return trade_log_csv_path
+
+
+def _parse_phase7_validation_dates(validation_dates: list[str]) -> list[str]:
+    normalized = sorted(dict.fromkeys(validation_dates))
+    if not normalized:
+        raise ValueError("build-phase7-volume-profile requires at least one --validation-date value")
+
+    for value in normalized:
+        date.fromisoformat(value)
+    return normalized
+
+
+def build_phase7_volume_profile(
+    cache_root: Path,
+    output_root: Path,
+    validation_dates: list[str],
+    proximity_threshold_points: float = 10.0,
+    bucket_size: float = 0.25,
+    htf_lookback_sessions: int = 180,
+) -> Path:
+    """Build deterministic Phase 7 volume-profile artifacts from the canonical cache."""
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    normalized_dates = _parse_phase7_validation_dates(validation_dates)
+    source_df = scan_canonical_cache(cache_root).collect()
+    write_volume_profile_artifacts(
+        source_df,
+        output_root,
+        proximity_threshold_points=proximity_threshold_points,
+        bucket_size=bucket_size,
+        htf_lookback_sessions=htf_lookback_sessions,
+    )
+    enriched = pl.read_parquet(output_root / "phase7_volume_profile_enriched.parquet")
+    write_volume_profile_validation_export(
+        enriched,
+        output_root,
+        normalized_dates,
+        bucket_size=bucket_size,
+        htf_lookback_sessions=htf_lookback_sessions,
+    )
+    return output_root / "phase7_volume_profile_enriched.parquet"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="vwap_revert")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -259,6 +329,19 @@ def build_parser() -> argparse.ArgumentParser:
     phase5.add_argument("--stop-loss-points", type=float, default=20.0)
     phase5.add_argument("--round-trip-commission", type=float, default=5.0)
     phase5.add_argument("--additional-slippage-points", type=float, default=0.0)
+
+    phase6 = subparsers.add_parser("build-phase6-core-analytics")
+    phase6.add_argument("--phase5-root", type=Path, required=True)
+    phase6.add_argument("--output-root", type=Path, required=True)
+    phase6.add_argument("--validation-date", dest="validation_dates", action="append", required=True)
+
+    phase7 = subparsers.add_parser("build-phase7-volume-profile")
+    phase7.add_argument("--cache-root", type=Path, required=True)
+    phase7.add_argument("--output-root", type=Path, required=True)
+    phase7.add_argument("--validation-date", dest="validation_dates", action="append", required=True)
+    phase7.add_argument("--proximity-threshold-points", type=float, default=10.0)
+    phase7.add_argument("--bucket-size", type=float, default=0.25)
+    phase7.add_argument("--htf-lookback-sessions", type=int, default=180)
     return parser
 
 
@@ -297,6 +380,23 @@ def main(argv: list[str] | None = None) -> int:
             stop_loss_points=args.stop_loss_points,
             round_trip_commission=args.round_trip_commission,
             additional_slippage_points=args.additional_slippage_points,
+        )
+        return 0
+    if args.command == "build-phase6-core-analytics":
+        build_phase6_core_analytics(
+            args.phase5_root,
+            args.output_root,
+            args.validation_dates,
+        )
+        return 0
+    if args.command == "build-phase7-volume-profile":
+        build_phase7_volume_profile(
+            args.cache_root,
+            args.output_root,
+            args.validation_dates,
+            proximity_threshold_points=args.proximity_threshold_points,
+            bucket_size=args.bucket_size,
+            htf_lookback_sessions=args.htf_lookback_sessions,
         )
         return 0
     parser.error(f"Unknown command: {args.command}")
