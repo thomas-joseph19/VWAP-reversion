@@ -260,7 +260,29 @@ def build_daily_rth_profiles(
             "prior_rth_val": summary.val,
         }
 
-    return pl.DataFrame(rows, strict=False).sort("trading_date")
+    return _empty_profile_frame(
+        rows,
+        "trading_date",
+        [
+            "trading_date",
+            "profile_family",
+            "source_trading_date",
+            "bucket_size",
+            "bucket_prices",
+            "bucket_volumes",
+            "daily_rth_poc",
+            "daily_rth_vah",
+            "daily_rth_val",
+            "prior_rth_poc",
+            "prior_rth_vah",
+            "prior_rth_val",
+            "lvn_prices",
+            "profile_trade_rows",
+            "profile_total_volume",
+            "quality_status",
+            "front_symbol",
+        ],
+    )
 
 
 def build_overnight_profiles(
@@ -300,7 +322,26 @@ def build_overnight_profiles(
             }
         )
 
-    return pl.DataFrame(rows, strict=False).sort("trading_date")
+    return _empty_profile_frame(
+        rows,
+        "trading_date",
+        [
+            "trading_date",
+            "profile_family",
+            "source_trading_date",
+            "bucket_size",
+            "bucket_prices",
+            "bucket_volumes",
+            "overnight_poc",
+            "overnight_vah",
+            "overnight_val",
+            "lvn_prices",
+            "profile_trade_rows",
+            "profile_total_volume",
+            "quality_status",
+            "front_symbol",
+        ],
+    )
 
 
 def _aggregate_histograms(window: pl.DataFrame) -> tuple[list[float], list[float]]:
@@ -315,6 +356,76 @@ def _aggregate_histograms(window: pl.DataFrame) -> tuple[list[float], list[float
 
     bucket_prices = sorted(aggregated)
     return bucket_prices, [aggregated[price] for price in bucket_prices]
+
+
+def _empty_profile_frame(
+    rows: list[dict[str, object]],
+    sort_column: str,
+    columns: list[str] | None = None,
+) -> pl.DataFrame:
+    if not rows:
+        if columns is None:
+            return pl.DataFrame([], strict=False)
+        return pl.DataFrame({column: [] for column in columns}, strict=False)
+    return pl.DataFrame(rows, strict=False).sort(sort_column)
+
+
+def _build_roll_boundary_deltas(sorted_profiles: pl.DataFrame) -> list[float]:
+    deltas = [0.0] * sorted_profiles.height
+    front_symbols = sorted_profiles["front_symbol"].to_list()
+    current_daily_rth_poc = sorted_profiles["daily_rth_poc"].to_list()
+
+    for idx in range(1, sorted_profiles.height):
+        prior_symbol = front_symbols[idx - 1]
+        current_symbol = front_symbols[idx]
+        if prior_symbol is None or current_symbol is None or prior_symbol == current_symbol:
+            continue
+
+        prior_daily_rth_poc = current_daily_rth_poc[idx - 1]
+        current_daily_rth_poc_value = current_daily_rth_poc[idx]
+        if prior_daily_rth_poc is None or current_daily_rth_poc_value is None:
+            continue
+        deltas[idx] = float(current_daily_rth_poc_value) - float(prior_daily_rth_poc)
+
+    return deltas
+
+
+def _roll_shift_for_window(source_idx: int, target_idx: int, boundary_deltas: list[float]) -> float:
+    if source_idx >= target_idx:
+        return 0.0
+    return float(sum(boundary_deltas[source_idx + 1 : target_idx + 1]))
+
+
+def _aggregate_histograms_on_target_axis(
+    sorted_profiles: pl.DataFrame,
+    window: pl.DataFrame,
+    *,
+    target_idx: int,
+    boundary_deltas: list[float],
+) -> tuple[list[float], list[float], bool]:
+    aggregated: dict[float, float] = {}
+    roll_adjustment_applied = False
+    source_indices = {
+        trading_date_value: idx
+        for idx, trading_date_value in enumerate(sorted_profiles["trading_date"].to_list())
+    }
+
+    for source_row in window.iter_rows(named=True):
+        source_idx = source_indices[source_row["trading_date"]]
+        price_shift = _roll_shift_for_window(source_idx, target_idx, boundary_deltas)
+        if price_shift != 0.0:
+            roll_adjustment_applied = True
+
+        for price, volume in zip(
+            source_row["bucket_prices"],
+            source_row["bucket_volumes"],
+            strict=True,
+        ):
+            shifted_price = _snap_price(float(price) + price_shift, float(source_row["bucket_size"]))
+            aggregated[shifted_price] = aggregated.get(shifted_price, 0.0) + float(volume)
+
+    bucket_prices = sorted(aggregated)
+    return bucket_prices, [aggregated[price] for price in bucket_prices], roll_adjustment_applied
 
 
 def build_htf_profiles(
@@ -332,11 +443,13 @@ def build_htf_profiles(
             "bucket_prices",
             "bucket_volumes",
             "front_symbol",
+            "daily_rth_poc",
         },
     )
     sorted_profiles = daily_profiles.sort("trading_date")
     rows: list[dict[str, object]] = []
     all_dates = sorted_profiles["trading_date"].to_list()
+    boundary_deltas = _build_roll_boundary_deltas(sorted_profiles)
 
     for idx, trading_date_value in enumerate(all_dates):
         window = sorted_profiles.slice(max(0, idx - lookback_sessions), min(idx, lookback_sessions))
@@ -344,6 +457,7 @@ def build_htf_profiles(
         source_front_symbols = sorted(
             symbol for symbol in set(window["front_symbol"].drop_nulls().to_list()) if symbol is not None
         )
+        roll_anchor_symbol = sorted_profiles["front_symbol"][idx]
         roll_mixed_window = len(source_front_symbols) > 1
         window_complete = source_session_count == lookback_sessions
         bucket_size = (
@@ -368,19 +482,22 @@ def build_htf_profiles(
             "window_target_sessions": lookback_sessions,
             "window_complete": window_complete,
             "roll_mixed_window": roll_mixed_window,
+            "roll_adjustment_applied": False,
+            "roll_anchor_symbol": None if roll_anchor_symbol is None else str(roll_anchor_symbol),
             "source_front_symbols": source_front_symbols,
-            "quality_status": "mixed_roll_window" if roll_mixed_window else "insufficient_history",
+            "quality_status": "insufficient_history",
         }
 
         if source_session_count == 0:
             rows.append(row)
             continue
 
-        if roll_mixed_window:
-            rows.append(row)
-            continue
-
-        bucket_prices, bucket_volumes = _aggregate_histograms(window)
+        bucket_prices, bucket_volumes, roll_adjustment_applied = _aggregate_histograms_on_target_axis(
+            sorted_profiles,
+            window,
+            target_idx=idx,
+            boundary_deltas=boundary_deltas,
+        )
         profile_levels = _compute_session_levels(
             pl.DataFrame(
                 {
@@ -410,12 +527,37 @@ def build_htf_profiles(
                 "htf_vah": None if profile_levels is None else float(profile_levels.vah),
                 "htf_val": None if profile_levels is None else float(profile_levels.val),
                 "lvn_prices": detect_lvn_prices(bucket_prices, bucket_volumes),
+                "roll_adjustment_applied": roll_adjustment_applied,
                 "quality_status": quality_status,
             }
         )
         rows.append(row)
 
-    return pl.DataFrame(rows, strict=False).sort("trading_date")
+    return _empty_profile_frame(
+        rows,
+        "trading_date",
+        [
+            "trading_date",
+            "profile_family",
+            "window_start_date",
+            "window_end_date",
+            "bucket_size",
+            "bucket_prices",
+            "bucket_volumes",
+            "htf_poc",
+            "htf_vah",
+            "htf_val",
+            "lvn_prices",
+            "source_session_count",
+            "window_target_sessions",
+            "window_complete",
+            "roll_mixed_window",
+            "roll_adjustment_applied",
+            "roll_anchor_symbol",
+            "source_front_symbols",
+            "quality_status",
+        ],
+    )
 
 
 def _pick_nearest_lvn_above(value: dict[str, object]) -> float | None:
@@ -528,6 +670,8 @@ def attach_volume_profile_levels(
                 "htf_window_complete",
                 "htf_roll_mixed_window",
                 "htf_quality_status",
+                "roll_adjustment_applied",
+                "roll_anchor_symbol",
             ),
             on="trading_date",
             how="left",
