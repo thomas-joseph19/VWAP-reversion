@@ -4,7 +4,13 @@ from datetime import UTC, date, datetime
 
 import polars as pl
 
-from vwap_revert.indicators.volume_profile import build_daily_rth_profiles, build_overnight_profiles, build_htf_profiles, detect_lvn_prices
+from vwap_revert.indicators.volume_profile import (
+    attach_volume_profile_levels,
+    build_daily_rth_profiles,
+    build_htf_profiles,
+    build_overnight_profiles,
+    detect_lvn_prices,
+)
 
 
 def _ts(year: int, month: int, day: int, hour: int, minute: int) -> datetime:
@@ -199,6 +205,165 @@ def _mixed_roll_daily_profiles() -> pl.DataFrame:
     )
 
 
+def _phase7_fixture() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "trading_date": [
+                date(2023, 6, 14),
+                date(2023, 6, 14),
+                date(2023, 6, 14),
+                date(2023, 6, 15),
+                date(2023, 6, 15),
+                date(2023, 6, 15),
+                date(2023, 6, 15),
+                date(2023, 6, 15),
+                date(2023, 6, 15),
+                date(2023, 6, 16),
+                date(2023, 6, 16),
+                date(2023, 6, 16),
+                date(2023, 6, 16),
+            ],
+            "ts_recv": [
+                _ts(2023, 6, 14, 13, 30),
+                _ts(2023, 6, 14, 13, 31),
+                _ts(2023, 6, 14, 13, 32),
+                _ts(2023, 6, 14, 23, 0),
+                _ts(2023, 6, 15, 0, 0),
+                _ts(2023, 6, 15, 13, 30),
+                _ts(2023, 6, 15, 13, 31),
+                _ts(2023, 6, 15, 13, 32),
+                _ts(2023, 6, 15, 14, 0),
+                _ts(2023, 6, 16, 13, 30),
+                _ts(2023, 6, 16, 13, 31),
+                _ts(2023, 6, 16, 13, 32),
+                _ts(2023, 6, 16, 13, 33),
+            ],
+            "ts_recv_et": [
+                _ts(2023, 6, 14, 13, 30),
+                _ts(2023, 6, 14, 13, 31),
+                _ts(2023, 6, 14, 13, 32),
+                _ts(2023, 6, 14, 23, 0),
+                _ts(2023, 6, 15, 0, 0),
+                _ts(2023, 6, 15, 13, 30),
+                _ts(2023, 6, 15, 13, 31),
+                _ts(2023, 6, 15, 13, 32),
+                _ts(2023, 6, 15, 14, 0),
+                _ts(2023, 6, 16, 13, 30),
+                _ts(2023, 6, 16, 13, 31),
+                _ts(2023, 6, 16, 13, 32),
+                _ts(2023, 6, 16, 13, 33),
+            ],
+            "is_overnight": [
+                False,
+                False,
+                False,
+                True,
+                True,
+                False,
+                False,
+                False,
+                False,
+                False,
+                False,
+                False,
+                False,
+            ],
+            "is_rth": [
+                True,
+                True,
+                True,
+                False,
+                False,
+                True,
+                True,
+                True,
+                True,
+                True,
+                True,
+                True,
+                True,
+            ],
+            "side": [
+                "A",
+                "B",
+                "A",
+                "A",
+                "B",
+                "A",
+                "B",
+                "A",
+                "N",
+                "A",
+                "B",
+                "N",
+                "N",
+            ],
+            "price": [
+                100.00,
+                100.25,
+                100.50,
+                101.00,
+                100.75,
+                102.00,
+                102.25,
+                102.50,
+                None,
+                103.00,
+                103.25,
+                None,
+                None,
+            ],
+            "size": [
+                10.0,
+                30.0,
+                20.0,
+                15.0,
+                5.0,
+                10.0,
+                15.0,
+                20.0,
+                0.0,
+                30.0,
+                10.0,
+                0.0,
+                0.0,
+            ],
+            "bid_px_00": [
+                99.75,
+                100.00,
+                100.25,
+                100.75,
+                100.50,
+                101.75,
+                102.00,
+                102.25,
+                102.00,
+                102.75,
+                103.00,
+                103.10,
+                None,
+            ],
+            "ask_px_00": [
+                100.25,
+                100.50,
+                100.75,
+                101.25,
+                101.00,
+                102.25,
+                102.50,
+                102.75,
+                102.50,
+                103.25,
+                103.50,
+                None,
+                103.30,
+            ],
+            "front_symbol": ["NQU3"] * 13,
+        },
+        strict=False,
+    )
+
+
 def test_overnight_profile_uses_completed_globex_rows_only() -> None:
     result = build_overnight_profiles(_session_fixture())
 
@@ -291,3 +456,107 @@ def test_lvn_detection_prefers_stable_local_minima() -> None:
     )
 
     assert result == [100.25, 100.75]
+
+
+def test_enriched_output_carries_htf_balance_edges_and_quality_status() -> None:
+    enriched = attach_volume_profile_levels(_phase7_fixture())
+
+    june_16_trade = enriched.filter(
+        (pl.col("trading_date") == date(2023, 6, 16)) & (pl.col("side") == "A")
+    ).row(0, named=True)
+    june_16_bid_only = enriched.filter(
+        (pl.col("trading_date") == date(2023, 6, 16))
+        & (pl.col("bid_px_00") == 103.10)
+        & pl.col("ask_px_00").is_null()
+    ).row(0, named=True)
+    june_14 = enriched.filter(pl.col("trading_date") == date(2023, 6, 14)).row(0, named=True)
+
+    assert {
+        "overnight_poc",
+        "overnight_vah",
+        "overnight_val",
+        "htf_poc",
+        "htf_vah",
+        "htf_val",
+        "htf_source_session_count",
+        "htf_window_complete",
+        "htf_roll_mixed_window",
+        "htf_nearest_lvn_above",
+        "htf_nearest_lvn_below",
+        "phase7_nearest_structural_level",
+        "phase7_nearest_structural_distance",
+        "phase7_levels_within_threshold",
+        "phase7_quality_status",
+    }.issubset(enriched.columns)
+    assert june_16_trade["overnight_poc"] == 101.0
+    assert june_16_trade["overnight_vah"] == 101.0
+    assert june_16_trade["overnight_val"] == 101.0
+    assert june_16_trade["htf_poc"] == 100.25
+    assert june_16_trade["htf_vah"] == 102.25
+    assert june_16_trade["htf_val"] == 100.25
+    assert june_16_trade["htf_source_session_count"] == 2
+    assert june_16_trade["htf_window_complete"] is False
+    assert june_16_trade["htf_roll_mixed_window"] is False
+    assert june_16_trade["htf_nearest_lvn_above"] == 101.0
+    assert june_16_trade["htf_nearest_lvn_below"] is None
+    assert june_16_trade["phase7_quality_status"] == "ok"
+    assert june_16_bid_only["phase7_reference_price"] == 103.10
+    assert june_16_bid_only["phase7_quality_status"] == "ok"
+    assert june_14["phase7_quality_status"] == "missing_both"
+
+
+def test_attach_volume_profile_levels_preserves_phase3_columns_and_assigns_nearest_labels() -> None:
+    enriched = attach_volume_profile_levels(_phase7_fixture(), proximity_threshold_points=2.0)
+
+    june_16_trade = enriched.filter(
+        (pl.col("trading_date") == date(2023, 6, 16)) & (pl.col("price") == 103.0)
+    ).row(0, named=True)
+
+    assert {
+        "prior_rth_vah",
+        "prior_rth_val",
+        "prior_rth_poc",
+        "nearest_structural_level",
+        "nearest_structural_distance",
+        "distance_to_prior_rth_poc",
+        "distance_to_prior_rth_vah",
+        "distance_to_prior_rth_val",
+        "distance_to_overnight_poc",
+        "distance_to_overnight_vah",
+        "distance_to_overnight_val",
+        "distance_to_htf_poc",
+        "distance_to_htf_vah",
+        "distance_to_htf_val",
+        "htf_nearest_lvn_above",
+        "htf_nearest_lvn_below",
+    }.issubset(enriched.columns)
+    assert june_16_trade["prior_rth_poc"] == 102.5
+    assert june_16_trade["prior_rth_vah"] == 102.5
+    assert june_16_trade["prior_rth_val"] == 102.25
+    assert june_16_trade["nearest_structural_level"] == "prior_rth_poc"
+    assert june_16_trade["nearest_structural_distance"] == 0.5
+    assert june_16_trade["distance_to_prior_rth_poc"] == 0.5
+    assert june_16_trade["distance_to_prior_rth_vah"] == 0.5
+    assert june_16_trade["distance_to_prior_rth_val"] == 0.75
+    assert june_16_trade["distance_to_overnight_poc"] == 2.0
+    assert june_16_trade["distance_to_overnight_vah"] == 2.0
+    assert june_16_trade["distance_to_overnight_val"] == 2.0
+    assert june_16_trade["distance_to_htf_poc"] == 2.75
+    assert june_16_trade["distance_to_htf_vah"] == 0.75
+    assert june_16_trade["distance_to_htf_val"] == 2.75
+    assert june_16_trade["phase7_nearest_structural_level"] in {
+        "prior_rth_poc",
+        "prior_rth_vah",
+        "prior_rth_val",
+        "overnight_poc",
+        "overnight_vah",
+        "overnight_val",
+        "htf_poc",
+        "htf_vah",
+        "htf_val",
+        "htf_lvn_above",
+        "htf_lvn_below",
+    }
+    assert june_16_trade["phase7_nearest_structural_level"] == "prior_rth_poc"
+    assert june_16_trade["phase7_nearest_structural_distance"] == 0.5
+    assert june_16_trade["phase7_levels_within_threshold"] == 7
