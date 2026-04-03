@@ -1,0 +1,144 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.14.3, pytest-8.4.2, pluggy-1.6.0
+rootdir: C:\Users\pranav\Desktop\trading\vwap revert
+configfile: pyproject.toml
+plugins: anyio-4.12.1, langsmith-0.3.45, mock-3.15.1
+collected 2 items
+
+tests\indicators\test_regime.py FF                                       [100%]
+
+================================== FAILURES ===================================
+_ test_build_session_regimes_marks_insufficient_history_before_threshold_window _
+
+canonical_trade_fixture = shape: (450, 7)\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502 front_sym...9381 \u2506 1    \u2506 2025-02-14   \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518
+
+    def test_build_session_regimes_marks_insufficient_history_before_threshold_window(canonical_trade_fixture):
+        config = SessionRegimeConfig(lookback_sessions=20, min_history_sessions=20)
+>       result = build_session_regimes(canonical_trade_fixture, config)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\indicators\test_regime.py:46: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+df = shape: (450, 7)\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502 front_sym...9381 \u2506 1    \u2506 2025-02-14   \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518
+config = SessionRegimeConfig(lookback_sessions=20, min_history_sessions=20, threshold_quantile=0.5)
+
+    def build_session_regimes(
+        df: pl.DataFrame,
+        config: SessionRegimeConfig = SessionRegimeConfig(),
+    ) -> pl.DataFrame:
+        """
+        Build a session-level regime table from completed-session volatility.
+    
+        Returns a DataFrame with one row per trading_date and columns:
+        - trading_date
+        - session_close_price
+        - session_log_return
+        - realized_volatility
+        - regime_threshold_value
+        - regime_label
+        - regime_reason
+        - history_session_count
+        - regime_quality_status
+        """
+        # 1. Filter to RTH trade rows
+        trades = df.filter(pl.col("is_rth") & pl.col("side").is_in(["A", "B"]))
+        if trades.is_empty():
+            return pl.DataFrame(schema={
+                "trading_date": pl.Date,
+                "session_close_price": pl.Float64,
+                "session_log_return": pl.Float64,
+                "realized_volatility": pl.Float64,
+                "regime_threshold_value": pl.Float64,
+                "regime_label": pl.Utf8,
+                "regime_reason": pl.Utf8,
+                "history_session_count": pl.UInt32,
+                "regime_quality_status": pl.Utf8,
+            })
+    
+        # 2. Extract session close price (last trade price of each trading_date)
+        sessions = (
+            trades.sort(["trading_date", "ts_recv"])
+            .group_by("trading_date", maintain_order=True)
+            .agg(pl.col("price").last().alias("session_close_price"))
+        )
+    
+        # 3. Compute session log-returns
+        sessions = sessions.with_columns(
+            pl.col("session_close_price").shift(1).alias("prior_session_close_price")
+        ).with_columns(
+>           (pl.col("session_close_price") / pl.col("prior_session_close_price")).ln().alias("session_log_return")
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        )
+E       AttributeError: 'Expr' object has no attribute 'ln'. Did you mean: 'le'?
+
+src\vwap_revert\indicators\regime.py:63: AttributeError
+_ test_build_session_regimes_labels_short_and_long_gamma_from_prior_completed_sessions _
+
+canonical_trade_fixture = shape: (450, 7)\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502 front_sym...9381 \u2506 1    \u2506 2025-02-14   \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518
+
+    def test_build_session_regimes_labels_short_and_long_gamma_from_prior_completed_sessions(canonical_trade_fixture):
+        config = SessionRegimeConfig(lookback_sessions=20, min_history_sessions=20)
+>       result = build_session_regimes(canonical_trade_fixture, config)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\indicators\test_regime.py:65: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+df = shape: (450, 7)\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502 front_sym...9381 \u2506 1    \u2506 2025-02-14   \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518
+config = SessionRegimeConfig(lookback_sessions=20, min_history_sessions=20, threshold_quantile=0.5)
+
+    def build_session_regimes(
+        df: pl.DataFrame,
+        config: SessionRegimeConfig = SessionRegimeConfig(),
+    ) -> pl.DataFrame:
+        """
+        Build a session-level regime table from completed-session volatility.
+    
+        Returns a DataFrame with one row per trading_date and columns:
+        - trading_date
+        - session_close_price
+        - session_log_return
+        - realized_volatility
+        - regime_threshold_value
+        - regime_label
+        - regime_reason
+        - history_session_count
+        - regime_quality_status
+        """
+        # 1. Filter to RTH trade rows
+        trades = df.filter(pl.col("is_rth") & pl.col("side").is_in(["A", "B"]))
+        if trades.is_empty():
+            return pl.DataFrame(schema={
+                "trading_date": pl.Date,
+                "session_close_price": pl.Float64,
+                "session_log_return": pl.Float64,
+                "realized_volatility": pl.Float64,
+                "regime_threshold_value": pl.Float64,
+                "regime_label": pl.Utf8,
+                "regime_reason": pl.Utf8,
+                "history_session_count": pl.UInt32,
+                "regime_quality_status": pl.Utf8,
+            })
+    
+        # 2. Extract session close price (last trade price of each trading_date)
+        sessions = (
+            trades.sort(["trading_date", "ts_recv"])
+            .group_by("trading_date", maintain_order=True)
+            .agg(pl.col("price").last().alias("session_close_price"))
+        )
+    
+        # 3. Compute session log-returns
+        sessions = sessions.with_columns(
+            pl.col("session_close_price").shift(1).alias("prior_session_close_price")
+        ).with_columns(
+>           (pl.col("session_close_price") / pl.col("prior_session_close_price")).ln().alias("session_log_return")
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        )
+E       AttributeError: 'Expr' object has no attribute 'ln'. Did you mean: 'le'?
+
+src\vwap_revert\indicators\regime.py:63: AttributeError
+=========================== short test summary info ===========================
+FAILED tests/indicators/test_regime.py::test_build_session_regimes_marks_insufficient_history_before_threshold_window
+FAILED tests/indicators/test_regime.py::test_build_session_regimes_labels_short_and_long_gamma_from_prior_completed_sessions
+============================== 2 failed in 0.60s ==============================

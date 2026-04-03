@@ -136,6 +136,7 @@ def test_cli_writes_phase5_trade_artifacts() -> None:
             "phase4_enriched_artifact",
             "phase4_setup_log_artifact",
             "row_count",
+            "same_row_exit_policy",
             "skipped_setups_artifact",
             "stop_loss_baseline_note",
             "trade_log_artifact",
@@ -148,5 +149,9 @@ def test_cli_writes_phase5_trade_artifacts() -> None:
         assert manifest["comparison_export"] == "validation/trade_simulation_validation_export.csv"
         assert manifest["validation_dates"] == ["2024-01-03"]
         assert manifest["row_count"] == comparison.height
+        assert manifest["same_row_exit_policy"] == (
+            "If stop-loss and VWAP target are both true on the same replay row, "
+            "the simulator exits conservatively via stop_loss."
+        )
     finally:
         shutil.rmtree(tmp_path, ignore_errors=True)

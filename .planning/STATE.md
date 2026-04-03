@@ -2,35 +2,35 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Phase 07 volume profile engine context captured; planning is the next step while Phase 04 manual validation remains deferred
-stopped_at: Phase 07 context gathered
-last_updated: "2026-04-02T21:50:00-04:00"
+status: Phase 08 complete; ready for Phase 09 development while deferred external validations remain tracked as debt
+stopped_at: Phase 08 complete
+last_updated: "2026-04-03T06:00:00.000Z"
 progress:
   total_phases: 10
-  completed_phases: 6
-  total_plans: 14
-  completed_plans: 14
+  completed_phases: 8
+  total_plans: 21
+  completed_plans: 21
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-02)
+See: .planning/PROJECT.md (updated 2026-04-03)
 
 **Core value:** Accurately measure the statistical edge of NQ VWAP reversion trades at structural levels during early NY session across volatility regimes.
-**Current focus:** Phase 07 - volume-profile-engine
+**Current focus:** Phase 08 - regime-&-multi-timeframe-vwap
 
 ## Current Position
 
-Phase: 07 (volume-profile-engine) - READY FOR PLANNING
+Phase: 09 (continuation-failure-rejection) - READY FOR CONTEXT
 Plan: 0 of TBD
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 14
+- Total plans completed: 18
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -44,10 +44,12 @@ Plan: 0 of TBD
 | 04 | 2 | - | - |
 | 05 | 3 | - | - |
 | 06 | 2 | - | - |
+| 07 | 4 | - | - |
+| 08 | 3 | - | - |
 
 **Recent Trend:**
 
-- Last 5 plans: 05-01, 05-02, 05-03, 06-01, 06-02
+- Last 5 plans: 07-04, 08-01, 08-02, 08-03
 - Trend: steady
 
 *Updated after each plan completion*
@@ -59,6 +61,13 @@ Plan: 0 of TBD
 | Phase 05 P03 | 13 min | 2 tasks | 4 files |
 | Phase 06 P01 | inline | 2 tasks | 3 files |
 | Phase 06 P02 | inline | 2 tasks | 4 files |
+| Phase 07 P01 | inline | 2 tasks | 4 files |
+| Phase 07 P02 | inline | 2 tasks | 3 files |
+| Phase 07 P03 | 12 min | 2 tasks | 4 files |
+| Phase 07 P04 | 18 min | 2 tasks | 4 files |
+| Phase 08 P01 | inline | 2 tasks | 3 files |
+| Phase 08 P02 | inline | 2 tasks | 2 files |
+| Phase 08 P03 | inline | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -89,6 +98,11 @@ Recent decisions affecting current work:
 - [Phase 06]: Phase 6 uses `phase5_trade_log.parquet` as the analytics source of truth and preserves Phase 5 context columns while adding derived trade-level analysis fields.
 - [Phase 06]: Phase 6 computes aggregate metrics from `net_dollars`, with explicit `None` behavior for undefined Sharpe and ratio-style edge cases.
 - [Phase 06]: Phase 6 emits deterministic CSV, JSON, and validation artifacts from a dedicated CLI command without mutating upstream Phase 5 outputs.
+- [Phase 07]: Phase 7 now keeps HTF `POC`, `VAH`, and `VAL` populated through row-level enrichment and CLI validation outputs, while external chart-platform comparison remains deferred.
+- [Phase 08]: Phase 8 classifies sessions causally as `short_gamma` or `long_gamma` from prior-completed-session realized volatility thresholds.
+- [Phase 08]: Phase 8 implements roll-bridged weekly and monthly VWAP on the row stream, using daily VWAP deltas for cross-session continuity.
+- [Phase 08]: Phase 8 applies explicit regime-adjusted sigma-expectation columns (`min_sigma`, `max_sigma`, `extension_passes`) to the enriched output artifact.
+- [Phase 08]: Phase 8 emits deterministic parquet, CSV validation, and manifest artifacts from one canonical-cache CLI command.
 
 ### Pending Todos
 
@@ -99,10 +113,11 @@ None yet.
 - External chart-platform validation for Phase 2 is deferred debt.
 - External chart-platform validation for Phase 3 is deferred debt.
 - Manual setup-log validation for Phase 4 is still pending.
+- External chart-platform validation for Phase 7 is deferred debt.
 - Continuation failure definition from BBO data is the weakest link; expect iterative refinement in Phase 9.
 
 ## Session Continuity
 
 Last session: 2026-04-02T21:25:00-04:00
-Stopped at: Phase 06 verification and planning updates complete
-Resume file: .planning/phases/07-volume-profile-engine/07-CONTEXT.md
+Stopped at: Phase 08 context gathered
+Resume file: .planning/phases/08-regime-&-multi-timeframe-vwap/08-CONTEXT.md

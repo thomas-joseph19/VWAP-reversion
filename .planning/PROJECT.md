@@ -14,6 +14,8 @@ Accurately measure the statistical edge of entering NQ reversion trades when pri
 
 - Phase 1 (2026-04-02): CME Globex BBO ingestion, causal front-month mapping, ET session labeling, partitioned parquet cache, and audit artifact generation are in place for NQ-only data.
 - Phase 2 (2026-04-02): Daily RTH-anchored VWAP, expanding volume-weighted sigma bands, CLI output, and validation exports are implemented and covered by local automated tests; external chart-platform comparison is deferred.
+- Phase 6 (2026-04-02): Phase 5 trade outputs now feed a deterministic analytics layer with enriched trade logs, baseline performance metrics, CSV/JSON exports, and validation manifests.
+- Phase 7 (2026-04-03): Daily, overnight, and HTF volume-profile artifacts are implemented with mixed-roll HTF bridging, row-level structural enrichment, and deterministic CLI validation exports; external chart-platform comparison is deferred.
 
 ### Active
 
@@ -33,11 +35,11 @@ Accurately measure the statistical edge of entering NQ reversion trades when pri
 - [ ] Define mechanical continuation failure from price action (rejection pattern at level)
 - [ ] Simulate trade entry after failure confirmation
 - [ ] Target reversion to Daily VWAP, Weekly VWAP, or developing POC
-- [ ] Track trade-level results (entry, exit, P&L, duration, sigma at entry, regime)
-- [ ] Compute backtest performance metrics (win rate, avg win/loss, profit factor, max drawdown, Sharpe)
+- [x] Track trade-level results (entry, exit, P&L, duration, sigma at entry, regime)
+- [x] Compute backtest performance metrics (win rate, avg win/loss, profit factor, max drawdown, Sharpe)
 - [ ] Break down results by gamma regime (short vs long)
 - [ ] Break down results by deviation band (1.7-2.2s, 2.2-3s, 3s+)
-- [ ] Output results to structured format (CSV/JSON) for analysis
+- [x] Output results to structured format (CSV/JSON) for analysis
 
 ### Out of Scope
 
@@ -93,10 +95,11 @@ Accurately measure the statistical edge of entering NQ reversion trades when pri
 | Phase 1 canonical timestamp | `ts_event` may be blank on quote-only rows | Use parsed `ts_recv` as the structural ordering key and preserve `ts_event` when present |
 | Phase 1 cache layout | Downstream phases need one trusted dataset | Use one canonical parquet dataset partitioned by `trading_date` with sibling roll/quality/schema artifacts |
 | Phase 2 VWAP anchor | Early-session reversion needs RTH fair value, not overnight anchor drift | Anchor daily VWAP at the first eligible 9:30 ET RTH trade and compute from trade rows only |
+| Phase 6 analytics input | Downstream analytics must stay aligned with executed trade economics | Use `phase5_trade_log.parquet` as the sole Phase 6 source of truth and compute aggregate metrics from `net_dollars` |
 
 ## Current State
 
-Phases 1 and 2 are complete from the repo's point of view. The codebase now has a runnable `src/` package, typed Databento ingestion, same-day volume front-month selection, ET session/trading-date labels, a partitioned canonical parquet cache, and a Phase 2 VWAP engine that emits enriched artifacts plus comparison exports for manual chart validation. External TradingView/NinjaTrader comparison remains deferred, so that debt is tracked while planning advances into Phase 3.
+Phases 1 through 7 are now complete from the repo's point of view. The codebase has progressed from canonical ingest and session labeling through VWAP, structural context, setup detection, trade replay, analytics, and now causal daily, overnight, and HTF volume-profile outputs. Phase 7 adds mixed-roll HTF bridging, row-level balance-edge availability, and a dedicated CLI rebuild path with deterministic validation exports. External chart-platform validation for Phases 2, 3, and 7, plus manual Phase 4 setup review, remain tracked as deferred debt while planning advances into Phase 8.
 
 ## Evolution
 
@@ -116,4 +119,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-02 after Phase 2 internal verification*
+*Last updated: 2026-04-03 after Phase 7 internal verification*

@@ -25,6 +25,11 @@ from .indicators.volume_profile import (
     write_volume_profile_artifacts,
     write_volume_profile_validation_export,
 )
+from .indicators.regime import (
+    SessionRegimeConfig,
+    write_regime_and_multi_timeframe_validation_export,
+    write_regime_and_multi_timeframe_vwap_artifacts,
+)
 from .indicators.vwap import attach_daily_vwap_bands, write_enriched_vwap_artifact, write_vwap_validation_export
 from .simulation import SimulationConfig, write_trade_simulation_artifacts
 from .data_pipeline.manifest import build_manifest
@@ -294,6 +299,53 @@ def build_phase7_volume_profile(
     return output_root / "phase7_volume_profile_enriched.parquet"
 
 
+def _parse_phase8_validation_dates(validation_dates: list[str]) -> list[str]:
+    normalized = sorted(dict.fromkeys(validation_dates))
+    if not normalized:
+        raise ValueError("build-phase8-regime-vwap requires at least one --validation-date value")
+
+    for value in normalized:
+        date.fromisoformat(value)
+    return normalized
+
+
+def build_phase8_regime_vwap(
+    cache_root: Path,
+    output_root: Path,
+    validation_dates: list[str],
+    lookback_sessions: int = 20,
+    min_history_sessions: int = 20,
+    threshold_quantile: float = 0.5,
+) -> Path:
+    """Build deterministic Phase 8 regime and multi-timeframe VWAP artifacts from the canonical cache."""
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    normalized_dates = _parse_phase8_validation_dates(validation_dates)
+    source_df = scan_canonical_cache(cache_root).collect()
+    
+    config = SessionRegimeConfig(
+        lookback_sessions=lookback_sessions,
+        min_history_sessions=min_history_sessions,
+        threshold_quantile=threshold_quantile,
+    )
+    
+    sess_path, enriched_path = write_regime_and_multi_timeframe_vwap_artifacts(
+        source_df,
+        output_root,
+        config=config,
+    )
+    
+    write_regime_and_multi_timeframe_validation_export(
+        enriched_df=pl.read_parquet(enriched_path),
+        session_regimes=pl.read_parquet(sess_path),
+        output_dir=output_root,
+        validation_dates=normalized_dates,
+        config=config,
+    )
+    
+    return enriched_path
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="vwap_revert")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -342,6 +394,14 @@ def build_parser() -> argparse.ArgumentParser:
     phase7.add_argument("--proximity-threshold-points", type=float, default=10.0)
     phase7.add_argument("--bucket-size", type=float, default=0.25)
     phase7.add_argument("--htf-lookback-sessions", type=int, default=180)
+
+    phase8 = subparsers.add_parser("build-phase8-regime-vwap")
+    phase8.add_argument("--cache-root", type=Path, required=True)
+    phase8.add_argument("--output-root", type=Path, required=True)
+    phase8.add_argument("--validation-date", dest="validation_dates", action="append", required=True)
+    phase8.add_argument("--lookback-sessions", type=int, default=20)
+    phase8.add_argument("--min-history-sessions", type=int, default=20)
+    phase8.add_argument("--threshold-quantile", type=float, default=0.5)
     return parser
 
 
@@ -397,6 +457,16 @@ def main(argv: list[str] | None = None) -> int:
             proximity_threshold_points=args.proximity_threshold_points,
             bucket_size=args.bucket_size,
             htf_lookback_sessions=args.htf_lookback_sessions,
+        )
+        return 0
+    if args.command == "build-phase8-regime-vwap":
+        build_phase8_regime_vwap(
+            cache_root=args.cache_root,
+            output_root=args.output_root,
+            validation_dates=args.validation_dates,
+            lookback_sessions=args.lookback_sessions,
+            min_history_sessions=args.min_history_sessions,
+            threshold_quantile=args.threshold_quantile,
         )
         return 0
     parser.error(f"Unknown command: {args.command}")

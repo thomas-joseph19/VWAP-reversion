@@ -15,6 +15,9 @@ import polars as pl
 DEFAULT_STOP_LOSS_BASELINE_NOTE = (
     "Default stop_loss_points=20.0 is a configurable non-optimized baseline for research and not an optimized strategy claim."
 )
+SAME_ROW_EXIT_POLICY_NOTE = (
+    "If stop-loss and VWAP target are both true on the same replay row, the simulator exits conservatively via stop_loss."
+)
 _PHASE4_SETUP_LOG_ARTIFACT_NAME = "phase4_setup_log.parquet"
 _PHASE4_ENRICHED_ARTIFACT_NAME = "phase4_setup_enriched.parquet"
 _PHASE5_TRADE_LOG_ARTIFACT_NAME = "phase5_trade_log.parquet"
@@ -440,6 +443,7 @@ def write_trade_simulation_artifacts(
         "validation_dates": normalized_dates,
         "row_count": validation_export.height,
         "stop_loss_baseline_note": DEFAULT_STOP_LOSS_BASELINE_NOTE,
+        "same_row_exit_policy": SAME_ROW_EXIT_POLICY_NOTE,
     }
     (validation_dir / _PHASE5_VALIDATION_MANIFEST_NAME).write_text(
         json.dumps(manifest, indent=2),
@@ -450,6 +454,7 @@ def write_trade_simulation_artifacts(
 
 __all__ = [
     "DEFAULT_STOP_LOSS_BASELINE_NOTE",
+    "SAME_ROW_EXIT_POLICY_NOTE",
     "SimulationConfig",
     "SimulationBatchResult",
     "entry_fill_price",

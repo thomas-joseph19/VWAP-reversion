@@ -64,9 +64,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Analytics
 
-- [ ] **ANLY-01**: System produces trade log with entry price, exit price, P&L (ticks and dollars), duration, sigma at entry, structural level, regime
-- [ ] **ANLY-02**: System computes core performance metrics — win rate, average win/loss, profit factor, max drawdown, Sharpe ratio, total P&L
-- [ ] **ANLY-03**: System outputs results to structured CSV and JSON files
+- [x] **ANLY-01**: System produces trade log with entry price, exit price, P&L (ticks and dollars), duration, sigma at entry, structural level, regime
+- [x] **ANLY-02**: System computes core performance metrics — win rate, average win/loss, profit factor, max drawdown, Sharpe ratio, total P&L
+- [x] **ANLY-03**: System outputs results to structured CSV and JSON files
 - [ ] **ANLY-04**: System breaks down all metrics by gamma regime (short vs long)
 - [ ] **ANLY-05**: System breaks down all metrics by σ-band at entry (1.7-2.2σ, 2.2-3.0σ, 3.0σ+)
 - [ ] **ANLY-06**: System breaks down all metrics by time-of-day (e.g., 15-minute buckets within trading window)
@@ -146,9 +146,9 @@ Machine learning enhancement of the mechanical model.
 | TSIM-06 | Phase 9 | Pending |
 | TSIM-07 | Phase 5 | Pending |
 | TSIM-08 | Phase 5 | Pending |
-| ANLY-01 | Phase 6 | Pending |
-| ANLY-02 | Phase 6 | Pending |
-| ANLY-03 | Phase 6 | Pending |
+| ANLY-01 | Phase 6 | Complete |
+| ANLY-02 | Phase 6 | Complete |
+| ANLY-03 | Phase 6 | Complete |
 | ANLY-04 | Phase 10 | Pending |
 | ANLY-05 | Phase 10 | Pending |
 | ANLY-06 | Phase 10 | Pending |
@@ -162,4 +162,4 @@ Machine learning enhancement of the mechanical model.
 
 ---
 *Requirements defined: 2026-04-01*
-*Last updated: 2026-04-02 after Phase 1 completion*
+*Last updated: 2026-04-02 after Phase 6 completion*

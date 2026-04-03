@@ -1,0 +1,43 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.14.3, pytest-8.4.2, pluggy-1.6.0
+rootdir: C:\Users\pranav\Desktop\trading\vwap revert
+configfile: pyproject.toml
+plugins: anyio-4.12.1, langsmith-0.3.45, mock-3.15.1
+collected 2 items
+
+tests\indicators\test_regime.py .F                                       [100%]
+
+================================== FAILURES ===================================
+_ test_build_session_regimes_labels_short_and_long_gamma_from_prior_completed_sessions _
+
+canonical_trade_fixture = shape: (450, 7)\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502 front_sym...9381 \u2506 1    \u2506 2025-02-14   \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518
+
+    def test_build_session_regimes_labels_short_and_long_gamma_from_prior_completed_sessions(canonical_trade_fixture):
+        config = SessionRegimeConfig(lookback_sessions=20, min_history_sessions=20)
+        result = build_session_regimes(canonical_trade_fixture, config)
+    
+        # After day 20, we should start seeing 'ok' or at least 'threshold_unavailable'
+        # According to our logic, day 21 is the first with 20 prior sessions.
+        # It will have realized_volatility but 0 prior realized_volatilities for the threshold.
+        day_21 = result.filter(pl.col("trading_date") == date(2025, 1, 1) + timedelta(days=20))
+>       assert day_21["history_session_count"].item() == 20
+E       AssertionError: assert 0 == 20
+E        +  where 0 = item()
+E        +    where item = shape: (1,)\nSeries: 'history_session_count' [i32]\n[\n	0\n].item
+
+tests\indicators\test_regime.py:71: AssertionError
+============================== warnings summary ===============================
+tests/indicators/test_regime.py::test_build_session_regimes_marks_insufficient_history_before_threshold_window
+tests/indicators/test_regime.py::test_build_session_regimes_labels_short_and_long_gamma_from_prior_completed_sessions
+  C:\Users\pranav\Desktop\trading\vwap revert\src\vwap_revert\indicators\regime.py:73: DeprecationWarning: the argument `min_periods` for `Expr.rolling_std` is deprecated. It was renamed to `min_samples` in version 1.21.0.
+    pl.col("session_log_return").shift(1).rolling_std(window_size=lookback, min_periods=1).alias("realized_volatility"),
+
+tests/indicators/test_regime.py::test_build_session_regimes_marks_insufficient_history_before_threshold_window
+tests/indicators/test_regime.py::test_build_session_regimes_labels_short_and_long_gamma_from_prior_completed_sessions
+  C:\Users\pranav\Desktop\trading\vwap revert\src\vwap_revert\indicators\regime.py:82: DeprecationWarning: the argument `min_periods` for `Expr.rolling_median` is deprecated. It was renamed to `min_samples` in version 1.21.0.
+    pl.col("realized_volatility").shift(1).rolling_median(window_size=lookback, min_periods=1).alias("regime_threshold_value")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/indicators/test_regime.py::test_build_session_regimes_labels_short_and_long_gamma_from_prior_completed_sessions
+=================== 1 failed, 1 passed, 4 warnings in 0.62s ===================
