@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
 
 import polars as pl
 
-from .structural_levels import _compute_session_levels
+from .structural_levels import _compute_session_levels, attach_prior_day_structural_levels
 from .vwap import _require_columns
 
 
@@ -15,6 +16,10 @@ DEFAULT_BUCKET_SIZE = 0.25
 DEFAULT_VALUE_AREA_FRACTION = 0.70
 DEFAULT_HTF_LOOKBACK_SESSIONS = 180
 DEFAULT_LVN_MIN_PROMINENCE_RATIO = 0.20
+PHASE7_DAILY_ARTIFACT_NAME = "phase7_daily_profiles.parquet"
+PHASE7_OVERNIGHT_ARTIFACT_NAME = "phase7_overnight_profiles.parquet"
+PHASE7_HTF_ARTIFACT_NAME = "phase7_htf_profiles.parquet"
+PHASE7_ENRICHED_ARTIFACT_NAME = "phase7_volume_profile_enriched.parquet"
 
 _REQUIRED_COLUMNS = {
     "trading_date",
@@ -28,6 +33,19 @@ _REQUIRED_COLUMNS = {
 }
 _TRADE_SIDES = ("A", "B")
 _LVN_KERNEL = (0.25, 0.5, 0.25)
+_PHASE7_LEVEL_ORDER = (
+    "prior_rth_poc",
+    "prior_rth_vah",
+    "prior_rth_val",
+    "overnight_poc",
+    "overnight_vah",
+    "overnight_val",
+    "htf_poc",
+    "htf_vah",
+    "htf_val",
+    "htf_lvn_above",
+    "htf_lvn_below",
+)
 
 
 @dataclass(frozen=True)
@@ -375,3 +393,224 @@ def build_htf_profiles(
         rows.append(row)
 
     return pl.DataFrame(rows, strict=False).sort("trading_date")
+
+
+def _pick_nearest_lvn_above(value: dict[str, object]) -> float | None:
+    reference_price = value.get("phase7_reference_price")
+    lvn_prices = value.get("lvn_prices")
+    if reference_price is None or not isinstance(lvn_prices, list):
+        return None
+
+    candidates = sorted(float(price) for price in lvn_prices if price is not None and float(price) >= float(reference_price))
+    if not candidates:
+        return None
+    return candidates[0]
+
+
+def _pick_nearest_lvn_below(value: dict[str, object]) -> float | None:
+    reference_price = value.get("phase7_reference_price")
+    lvn_prices = value.get("lvn_prices")
+    if reference_price is None or not isinstance(lvn_prices, list):
+        return None
+
+    candidates = sorted(
+        (float(price) for price in lvn_prices if price is not None and float(price) <= float(reference_price)),
+        reverse=True,
+    )
+    if not candidates:
+        return None
+    return candidates[0]
+
+
+def _pick_phase7_nearest_level(value: dict[str, object]) -> dict[str, object]:
+    candidates: list[tuple[str, float]] = []
+    for idx, label in enumerate(_PHASE7_LEVEL_ORDER):
+        distance = value.get(f"distance_to_{label}")
+        if distance is None:
+            continue
+        candidates.append((label, abs(float(distance)), idx))
+
+    if not candidates:
+        return {"label": None, "distance": None}
+
+    label, distance, _ = min(candidates, key=lambda item: (item[1], item[2]))
+    return {"label": label, "distance": distance}
+
+
+def attach_volume_profile_levels(
+    df: pl.DataFrame,
+    proximity_threshold_points: float = 10.0,
+    bucket_size: float = DEFAULT_BUCKET_SIZE,
+    htf_lookback_sessions: int = DEFAULT_HTF_LOOKBACK_SESSIONS,
+) -> pl.DataFrame:
+    """Attach active overnight and HTF profile references to the canonical row stream."""
+
+    _require_columns(df, _REQUIRED_COLUMNS)
+
+    enriched = attach_prior_day_structural_levels(
+        df,
+        proximity_threshold_points=proximity_threshold_points,
+    )
+    overnight_profiles = build_overnight_profiles(df, bucket_size=bucket_size).rename(
+        {"quality_status": "overnight_quality_status"}
+    )
+    htf_profiles = build_htf_profiles(
+        build_daily_rth_profiles(df, bucket_size=bucket_size),
+        lookback_sessions=htf_lookback_sessions,
+    ).rename(
+        {
+            "quality_status": "htf_quality_status",
+            "source_session_count": "htf_source_session_count",
+            "window_complete": "htf_window_complete",
+            "roll_mixed_window": "htf_roll_mixed_window",
+        }
+    )
+
+    bid_col = pl.col("bid_px_00") if "bid_px_00" in df.columns else pl.lit(None)
+    ask_col = pl.col("ask_px_00") if "ask_px_00" in df.columns else pl.lit(None)
+    phase7_reference_price = (
+        pl.when(pl.col("side").is_in(_TRADE_SIDES))
+        .then(pl.col("price"))
+        .when(pl.all_horizontal(bid_col.is_not_null(), ask_col.is_not_null()))
+        .then((bid_col + ask_col) / 2.0)
+        .when(bid_col.is_not_null())
+        .then(bid_col)
+        .when(ask_col.is_not_null())
+        .then(ask_col)
+        .otherwise(None)
+        .alias("phase7_reference_price")
+    )
+
+    joined = (
+        enriched.with_row_index("__row")
+        .join(
+            overnight_profiles.select(
+                "trading_date",
+                "overnight_poc",
+                "overnight_vah",
+                "overnight_val",
+                "overnight_quality_status",
+            ),
+            on="trading_date",
+            how="left",
+        )
+        .join(
+            htf_profiles.select(
+                "trading_date",
+                "htf_poc",
+                "htf_vah",
+                "htf_val",
+                "lvn_prices",
+                "htf_source_session_count",
+                "htf_window_complete",
+                "htf_roll_mixed_window",
+                "htf_quality_status",
+            ),
+            on="trading_date",
+            how="left",
+        )
+        .with_columns(phase7_reference_price)
+    )
+
+    joined = joined.with_columns(
+        pl.struct("phase7_reference_price", "lvn_prices")
+        .map_elements(_pick_nearest_lvn_above, return_dtype=pl.Float64)
+        .alias("htf_nearest_lvn_above"),
+        pl.struct("phase7_reference_price", "lvn_prices")
+        .map_elements(_pick_nearest_lvn_below, return_dtype=pl.Float64)
+        .alias("htf_nearest_lvn_below"),
+    )
+
+    for label in (
+        "prior_rth_poc",
+        "prior_rth_vah",
+        "prior_rth_val",
+        "overnight_poc",
+        "overnight_vah",
+        "overnight_val",
+        "htf_poc",
+        "htf_vah",
+        "htf_val",
+        "htf_lvn_above",
+        "htf_lvn_below",
+    ):
+        source_column = label
+        if label == "htf_lvn_above":
+            source_column = "htf_nearest_lvn_above"
+        elif label == "htf_lvn_below":
+            source_column = "htf_nearest_lvn_below"
+
+        joined = joined.with_columns(
+            (pl.col("phase7_reference_price") - pl.col(source_column)).alias(f"distance_to_{label}")
+        )
+
+    joined = joined.with_columns(
+        pl.when(pl.all_horizontal(pl.col("overnight_poc").is_not_null(), pl.col("htf_poc").is_not_null()))
+        .then(pl.lit("ok"))
+        .when(pl.all_horizontal(pl.col("overnight_poc").is_null(), pl.col("htf_poc").is_null()))
+        .then(pl.lit("missing_both"))
+        .when(pl.col("overnight_poc").is_null())
+        .then(pl.lit("missing_overnight"))
+        .otherwise(pl.lit("missing_htf"))
+        .alias("phase7_quality_status")
+    )
+
+    nearest_struct = pl.struct(
+        *[pl.col(f"distance_to_{label}").alias(f"distance_to_{label}") for label in _PHASE7_LEVEL_ORDER]
+    ).map_elements(
+        _pick_phase7_nearest_level,
+        return_dtype=pl.Struct({"label": pl.Utf8, "distance": pl.Float64}),
+    )
+
+    threshold_terms = [
+        pl.when(pl.col(f"distance_to_{label}").is_not_null())
+        .then(pl.col(f"distance_to_{label}").abs() <= proximity_threshold_points)
+        .otherwise(False)
+        .cast(pl.Int64)
+        for label in _PHASE7_LEVEL_ORDER
+    ]
+
+    return (
+        joined.with_columns(nearest_struct.alias("__phase7_nearest"))
+        .with_columns(
+            pl.col("__phase7_nearest").struct.field("label").alias("phase7_nearest_structural_level"),
+            pl.col("__phase7_nearest").struct.field("distance").alias("phase7_nearest_structural_distance"),
+            sum(threshold_terms).alias("phase7_levels_within_threshold"),
+        )
+        .sort("__row")
+        .drop("__row", "__phase7_nearest", "lvn_prices")
+    )
+
+
+def write_volume_profile_artifacts(
+    df: pl.DataFrame,
+    output_dir: Path,
+    proximity_threshold_points: float = 10.0,
+    bucket_size: float = DEFAULT_BUCKET_SIZE,
+    htf_lookback_sessions: int = DEFAULT_HTF_LOOKBACK_SESSIONS,
+) -> tuple[Path, Path, Path, Path]:
+    """Persist deterministic Phase 7 profile-family and enriched artifacts."""
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    daily_profiles = build_daily_rth_profiles(df, bucket_size=bucket_size)
+    overnight_profiles = build_overnight_profiles(df, bucket_size=bucket_size)
+    htf_profiles = build_htf_profiles(
+        daily_profiles,
+        lookback_sessions=htf_lookback_sessions,
+    )
+    enriched = attach_volume_profile_levels(
+        df,
+        proximity_threshold_points=proximity_threshold_points,
+        bucket_size=bucket_size,
+        htf_lookback_sessions=htf_lookback_sessions,
+    )
+
+    daily_path = output_dir / PHASE7_DAILY_ARTIFACT_NAME
+    overnight_path = output_dir / PHASE7_OVERNIGHT_ARTIFACT_NAME
+    htf_path = output_dir / PHASE7_HTF_ARTIFACT_NAME
+    enriched_path = output_dir / PHASE7_ENRICHED_ARTIFACT_NAME
+    daily_profiles.write_parquet(daily_path)
+    overnight_profiles.write_parquet(overnight_path)
+    htf_profiles.write_parquet(htf_path)
+    enriched.write_parquet(enriched_path)
+    return daily_path, overnight_path, htf_path, enriched_path

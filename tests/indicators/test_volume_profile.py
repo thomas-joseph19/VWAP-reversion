@@ -222,6 +222,8 @@ def _phase7_fixture() -> pl.DataFrame:
                 date(2023, 6, 16),
                 date(2023, 6, 16),
                 date(2023, 6, 16),
+                date(2023, 6, 16),
+                date(2023, 6, 16),
             ],
             "ts_recv": [
                 _ts(2023, 6, 14, 13, 30),
@@ -233,6 +235,8 @@ def _phase7_fixture() -> pl.DataFrame:
                 _ts(2023, 6, 15, 13, 31),
                 _ts(2023, 6, 15, 13, 32),
                 _ts(2023, 6, 15, 14, 0),
+                _ts(2023, 6, 15, 23, 0),
+                _ts(2023, 6, 16, 0, 0),
                 _ts(2023, 6, 16, 13, 30),
                 _ts(2023, 6, 16, 13, 31),
                 _ts(2023, 6, 16, 13, 32),
@@ -248,6 +252,8 @@ def _phase7_fixture() -> pl.DataFrame:
                 _ts(2023, 6, 15, 13, 31),
                 _ts(2023, 6, 15, 13, 32),
                 _ts(2023, 6, 15, 14, 0),
+                _ts(2023, 6, 15, 23, 0),
+                _ts(2023, 6, 16, 0, 0),
                 _ts(2023, 6, 16, 13, 30),
                 _ts(2023, 6, 16, 13, 31),
                 _ts(2023, 6, 16, 13, 32),
@@ -263,6 +269,8 @@ def _phase7_fixture() -> pl.DataFrame:
                 False,
                 False,
                 False,
+                True,
+                True,
                 False,
                 False,
                 False,
@@ -278,6 +286,8 @@ def _phase7_fixture() -> pl.DataFrame:
                 True,
                 True,
                 True,
+                False,
+                False,
                 True,
                 True,
                 True,
@@ -295,6 +305,8 @@ def _phase7_fixture() -> pl.DataFrame:
                 "N",
                 "A",
                 "B",
+                "A",
+                "B",
                 "N",
                 "N",
             ],
@@ -308,6 +320,8 @@ def _phase7_fixture() -> pl.DataFrame:
                 102.25,
                 102.50,
                 None,
+                101.00,
+                101.25,
                 103.00,
                 103.25,
                 None,
@@ -323,6 +337,8 @@ def _phase7_fixture() -> pl.DataFrame:
                 15.0,
                 20.0,
                 0.0,
+                12.0,
+                18.0,
                 30.0,
                 10.0,
                 0.0,
@@ -338,6 +354,8 @@ def _phase7_fixture() -> pl.DataFrame:
                 102.00,
                 102.25,
                 102.00,
+                100.75,
+                101.00,
                 102.75,
                 103.00,
                 103.10,
@@ -353,12 +371,14 @@ def _phase7_fixture() -> pl.DataFrame:
                 102.50,
                 102.75,
                 102.50,
+                101.25,
+                101.50,
                 103.25,
                 103.50,
                 None,
                 103.30,
             ],
-            "front_symbol": ["NQU3"] * 13,
+            "front_symbol": ["NQU3"] * 15,
         },
         strict=False,
     )
@@ -488,16 +508,16 @@ def test_enriched_output_carries_htf_balance_edges_and_quality_status() -> None:
         "phase7_levels_within_threshold",
         "phase7_quality_status",
     }.issubset(enriched.columns)
-    assert june_16_trade["overnight_poc"] == 101.0
-    assert june_16_trade["overnight_vah"] == 101.0
+    assert june_16_trade["overnight_poc"] == 101.25
+    assert june_16_trade["overnight_vah"] == 101.25
     assert june_16_trade["overnight_val"] == 101.0
     assert june_16_trade["htf_poc"] == 100.25
     assert june_16_trade["htf_vah"] == 102.25
-    assert june_16_trade["htf_val"] == 100.25
+    assert june_16_trade["htf_val"] == 100.0
     assert june_16_trade["htf_source_session_count"] == 2
     assert june_16_trade["htf_window_complete"] is False
     assert june_16_trade["htf_roll_mixed_window"] is False
-    assert june_16_trade["htf_nearest_lvn_above"] == 101.0
+    assert june_16_trade["htf_nearest_lvn_above"] is None
     assert june_16_trade["htf_nearest_lvn_below"] is None
     assert june_16_trade["phase7_quality_status"] == "ok"
     assert june_16_bid_only["phase7_reference_price"] == 103.10
@@ -533,17 +553,17 @@ def test_attach_volume_profile_levels_preserves_phase3_columns_and_assigns_neare
     assert june_16_trade["prior_rth_poc"] == 102.5
     assert june_16_trade["prior_rth_vah"] == 102.5
     assert june_16_trade["prior_rth_val"] == 102.25
-    assert june_16_trade["nearest_structural_level"] == "prior_rth_poc"
+    assert june_16_trade["nearest_structural_level"] == "prior_rth_vah"
     assert june_16_trade["nearest_structural_distance"] == 0.5
     assert june_16_trade["distance_to_prior_rth_poc"] == 0.5
     assert june_16_trade["distance_to_prior_rth_vah"] == 0.5
     assert june_16_trade["distance_to_prior_rth_val"] == 0.75
-    assert june_16_trade["distance_to_overnight_poc"] == 2.0
-    assert june_16_trade["distance_to_overnight_vah"] == 2.0
+    assert june_16_trade["distance_to_overnight_poc"] == 1.75
+    assert june_16_trade["distance_to_overnight_vah"] == 1.75
     assert june_16_trade["distance_to_overnight_val"] == 2.0
     assert june_16_trade["distance_to_htf_poc"] == 2.75
     assert june_16_trade["distance_to_htf_vah"] == 0.75
-    assert june_16_trade["distance_to_htf_val"] == 2.75
+    assert june_16_trade["distance_to_htf_val"] == 3.0
     assert june_16_trade["phase7_nearest_structural_level"] in {
         "prior_rth_poc",
         "prior_rth_vah",
