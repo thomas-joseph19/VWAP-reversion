@@ -119,11 +119,12 @@ Plans:
   3. Low Volume Nodes (LVNs) detected from valleys in volume profile distribution
   4. Balance area extremes identified from HTF composite profile edges
   5. Overnight value area (VAH, VAL, POC) computed from globex session data before each RTH open
-**Plans**: 3 plans
+**Plans**: 4 plans
 Plans:
-- [ ] 07-01-PLAN.md - Build and test the causal Phase 7 volume-profile core for overnight, daily, HTF, and LVN primitives
-- [ ] 07-02-PLAN.md - Add row-aligned Phase 7 enrichment and deterministic profile-family parquet artifacts
-- [ ] 07-03-PLAN.md - Wire Phase 7 validation exports and the dedicated CLI rebuild command
+- [x] 07-01-PLAN.md - Build and test the causal Phase 7 volume-profile core for overnight, daily, HTF, and LVN primitives
+- [x] 07-02-PLAN.md - Add row-aligned Phase 7 enrichment and deterministic profile-family parquet artifacts
+- [x] 07-03-PLAN.md - Wire Phase 7 validation exports and the dedicated CLI rebuild command
+- [x] 07-04-PLAN.md - Close the HTF mixed-roll blocker with a roll-bridged quarterly composite and row-level balance-edge availability
 
 ### Phase 8: Regime & Multi-Timeframe VWAP
 **Goal**: Sessions classified by volatility regime and multi-timeframe VWAP anchors available for signal and target enrichment
@@ -135,7 +136,11 @@ Plans:
   3. Regime-adjusted deviation thresholds applied (different selectivity per regime)
   4. Weekly VWAP rolls correctly across sessions within the trading week including across contract rolls
   5. Monthly VWAP rolls correctly across sessions within the calendar month including across contract rolls
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 08-01-PLAN.md - Build the causal session-level realized-volatility and binary regime classification core
+- [ ] 08-02-PLAN.md - Add roll-bridged weekly/monthly VWAP row enrichment and stable regime join columns
+- [ ] 08-03-PLAN.md - Wire deterministic Phase 8 artifacts, validation exports, and the CLI rebuild command
 
 ### Phase 9: Full Strategy Integration
 **Goal**: Strategy upgraded with all available indicators for high-fidelity setup detection and flexible trade management
@@ -172,7 +177,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. Setup Detection | 2/2 | Implemented; manual setup-log validation pending | 2026-04-02 |
 | 5. Trade Simulation Engine | 3/3 | Complete | 2026-04-02 |
 | 6. Core Analytics & Output | 2/2 | Complete | 2026-04-02 |
-| 7. Volume Profile Engine | 0/? | Not started | - |
+| 7. Volume Profile Engine | 4/4 | Internally verified; external chart validation deferred | 2026-04-03 |
 | 8. Regime & Multi-Timeframe VWAP | 0/? | Not started | - |
 | 9. Full Strategy Integration | 0/? | Not started | - |
 | 10. Advanced Analytics | 0/? | Not started | - |
