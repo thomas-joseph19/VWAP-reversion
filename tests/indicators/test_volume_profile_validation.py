@@ -192,9 +192,10 @@ def test_cli_writes_phase7_volume_profile_artifacts() -> None:
         mixed_roll_rows = comparison.filter(pl.col("trading_date") == date(2023, 9, 20))
         assert mixed_roll_rows.height > 0
         assert mixed_roll_rows["htf_roll_mixed_window"].all()
-        assert mixed_roll_rows["htf_poc"].is_null().all()
-        assert mixed_roll_rows["htf_vah"].is_null().all()
-        assert mixed_roll_rows["htf_val"].is_null().all()
+        assert mixed_roll_rows["htf_poc"].is_not_null().all()
+        assert mixed_roll_rows["htf_vah"].is_not_null().all()
+        assert mixed_roll_rows["htf_val"].is_not_null().all()
+        assert mixed_roll_rows["phase7_quality_status"].eq("ok").all()
 
         manifest = json.loads((output_root / "validation" / "validation_sessions.json").read_text(encoding="utf-8"))
         assert sorted(manifest) == [

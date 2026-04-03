@@ -205,6 +205,129 @@ def _mixed_roll_daily_profiles() -> pl.DataFrame:
     )
 
 
+def _mixed_roll_phase7_fixture() -> pl.DataFrame:
+    return pl.DataFrame(
+        {
+            "trading_date": [
+                date(2023, 9, 18),
+                date(2023, 9, 18),
+                date(2023, 9, 18),
+                date(2023, 9, 18),
+                date(2023, 9, 19),
+                date(2023, 9, 19),
+                date(2023, 9, 19),
+                date(2023, 9, 19),
+                date(2023, 9, 20),
+                date(2023, 9, 20),
+                date(2023, 9, 20),
+                date(2023, 9, 20),
+            ],
+            "ts_recv": [
+                _ts(2023, 9, 18, 13, 30),
+                _ts(2023, 9, 18, 13, 31),
+                _ts(2023, 9, 18, 13, 32),
+                _ts(2023, 9, 18, 13, 33),
+                _ts(2023, 9, 19, 13, 30),
+                _ts(2023, 9, 19, 13, 31),
+                _ts(2023, 9, 19, 13, 32),
+                _ts(2023, 9, 19, 13, 33),
+                _ts(2023, 9, 20, 13, 30),
+                _ts(2023, 9, 20, 13, 31),
+                _ts(2023, 9, 20, 13, 32),
+                _ts(2023, 9, 20, 13, 33),
+            ],
+            "ts_recv_et": [
+                _ts(2023, 9, 18, 13, 30),
+                _ts(2023, 9, 18, 13, 31),
+                _ts(2023, 9, 18, 13, 32),
+                _ts(2023, 9, 18, 13, 33),
+                _ts(2023, 9, 19, 13, 30),
+                _ts(2023, 9, 19, 13, 31),
+                _ts(2023, 9, 19, 13, 32),
+                _ts(2023, 9, 19, 13, 33),
+                _ts(2023, 9, 20, 13, 30),
+                _ts(2023, 9, 20, 13, 31),
+                _ts(2023, 9, 20, 13, 32),
+                _ts(2023, 9, 20, 13, 33),
+            ],
+            "is_overnight": [False] * 12,
+            "is_rth": [True] * 12,
+            "side": ["A", "B", "A", "N"] * 3,
+            "price": [
+                15000.0,
+                15000.25,
+                15000.25,
+                None,
+                15100.0,
+                15100.25,
+                15100.25,
+                None,
+                15150.0,
+                15150.25,
+                15150.25,
+                None,
+            ],
+            "size": [
+                10.0,
+                10.0,
+                10.0,
+                0.0,
+                12.0,
+                9.0,
+                9.0,
+                0.0,
+                14.0,
+                8.0,
+                8.0,
+                0.0,
+            ],
+            "bid_px_00": [
+                14999.75,
+                15000.0,
+                15000.0,
+                15000.0,
+                15099.75,
+                15100.0,
+                15100.0,
+                15100.0,
+                15149.75,
+                15150.0,
+                15150.0,
+                15150.0,
+            ],
+            "ask_px_00": [
+                15000.25,
+                15000.5,
+                15000.5,
+                15000.5,
+                15100.25,
+                15100.5,
+                15100.5,
+                15100.5,
+                15150.25,
+                15150.5,
+                15150.5,
+                15150.5,
+            ],
+            "front_symbol": [
+                "NQU3",
+                "NQU3",
+                "NQU3",
+                "NQU3",
+                "NQZ3",
+                "NQZ3",
+                "NQZ3",
+                "NQZ3",
+                "NQZ3",
+                "NQZ3",
+                "NQZ3",
+                "NQZ3",
+            ],
+        },
+        strict=False,
+    )
+
+
 def _phase7_fixture() -> pl.DataFrame:
     return pl.DataFrame(
         {
@@ -453,19 +576,42 @@ def test_htf_composite_excludes_current_session_and_tracks_window_coverage() -> 
     assert june_16["quality_status"] == "insufficient_history"
 
 
-def test_htf_composite_nulls_levels_when_roll_window_contains_multiple_front_symbols() -> None:
+def test_htf_composite_aligns_mixed_roll_windows_onto_current_contract_axis() -> None:
     result = build_htf_profiles(_mixed_roll_daily_profiles(), lookback_sessions=2, min_full_window_sessions=2)
 
     september_20 = result.filter(pl.col("trading_date") == date(2023, 9, 20)).row(0, named=True)
 
     assert september_20["roll_mixed_window"] is True
-    assert september_20["quality_status"] == "mixed_roll_window"
-    assert september_20["htf_poc"] is None
-    assert september_20["htf_vah"] is None
-    assert september_20["htf_val"] is None
+    assert september_20["roll_adjustment_applied"] is True
+    assert september_20["roll_anchor_symbol"] == "NQZ3"
+    assert september_20["source_session_count"] == 2
+    assert september_20["window_complete"] is True
+    assert september_20["quality_status"] == "full_window"
+    assert september_20["htf_poc"] == 15100.25
+    assert september_20["htf_vah"] == 15100.25
+    assert september_20["htf_val"] == 15100.0
     assert september_20["lvn_prices"] == []
-    assert september_20["bucket_prices"] == []
-    assert september_20["bucket_volumes"] == []
+    assert september_20["bucket_prices"] == [15100.0, 15100.25]
+    assert september_20["bucket_volumes"] == [22.0, 38.0]
+
+
+def test_attach_volume_profile_levels_keeps_mixed_roll_htf_edges_available() -> None:
+    enriched = attach_volume_profile_levels(_mixed_roll_phase7_fixture(), htf_lookback_sessions=2)
+
+    september_20_rows = enriched.filter(pl.col("trading_date") == date(2023, 9, 20))
+
+    assert september_20_rows.height > 0
+    assert {
+        "roll_adjustment_applied",
+        "roll_anchor_symbol",
+    }.issubset(enriched.columns)
+    assert september_20_rows["htf_roll_mixed_window"].all()
+    assert september_20_rows["htf_poc"].is_not_null().all()
+    assert september_20_rows["htf_vah"].is_not_null().all()
+    assert september_20_rows["htf_val"].is_not_null().all()
+    assert september_20_rows["phase7_quality_status"].eq("ok").all()
+    assert september_20_rows["roll_adjustment_applied"].all()
+    assert september_20_rows["roll_anchor_symbol"].to_list() == ["NQZ3"] * september_20_rows.height
 
 
 def test_lvn_detection_prefers_stable_local_minima() -> None:
