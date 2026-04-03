@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 3: Simple Structural Levels** - Compute prior-day value area and detect price proximity to structural reference points
 - [ ] **Phase 4: Setup Detection** - Identify candidate VWAP reversion setups by combining deviation, structural proximity, and time window filters
 - [ ] **Phase 5: Trade Simulation Engine** - Simulate mechanical trade entry/exit with slippage, commissions, stops, and position management
-- [ ] **Phase 6: Core Analytics & Output** - Produce trade log, compute performance metrics, and export results to CSV/JSON
+- [x] **Phase 6: Core Analytics & Output** - Produce trade log, compute performance metrics, and export results to CSV/JSON
 - [ ] **Phase 7: Volume Profile Engine** - Build daily and HTF volume profiles with LVN detection, balance areas, and overnight value area
 - [ ] **Phase 8: Regime & Multi-Timeframe VWAP** - Classify sessions by volatility regime and compute weekly/monthly VWAP anchors
 - [ ] **Phase 9: Full Strategy Integration** - Add continuation failure detection, confluence scoring, and multi-target exit logic
@@ -104,7 +104,10 @@ Plans:
   1. Trade log contains entry price, exit price, P&L in ticks and dollars, duration, sigma at entry, and structural level for every trade
   2. Core performance metrics computed — win rate, average win/loss ratio, profit factor, max drawdown, Sharpe ratio, total P&L
   3. Results exported to both structured CSV and JSON files
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [x] 06-01-PLAN.md - Build the tested analytics-core contract for trade-log enrichment and baseline metric formulas
+- [x] 06-02-PLAN.md - Wire deterministic Phase 6 CSV/JSON artifacts, validation outputs, and the analytics CLI command
 
 ### Phase 7: Volume Profile Engine
 **Goal**: Full structural level detection from daily and HTF volume profiles replacing simple prior-day VA proxy
@@ -116,7 +119,11 @@ Plans:
   3. Low Volume Nodes (LVNs) detected from valleys in volume profile distribution
   4. Balance area extremes identified from HTF composite profile edges
   5. Overnight value area (VAH, VAL, POC) computed from globex session data before each RTH open
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 07-01-PLAN.md - Build and test the causal Phase 7 volume-profile core for overnight, daily, HTF, and LVN primitives
+- [ ] 07-02-PLAN.md - Add row-aligned Phase 7 enrichment and deterministic profile-family parquet artifacts
+- [ ] 07-03-PLAN.md - Wire Phase 7 validation exports and the dedicated CLI rebuild command
 
 ### Phase 8: Regime & Multi-Timeframe VWAP
 **Goal**: Sessions classified by volatility regime and multi-timeframe VWAP anchors available for signal and target enrichment
@@ -164,7 +171,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Simple Structural Levels | 2/2 | Internally verified; external chart validation deferred | 2026-04-02 |
 | 4. Setup Detection | 2/2 | Implemented; manual setup-log validation pending | 2026-04-02 |
 | 5. Trade Simulation Engine | 3/3 | Complete | 2026-04-02 |
-| 6. Core Analytics & Output | 0/? | Not started | - |
+| 6. Core Analytics & Output | 2/2 | Complete | 2026-04-02 |
 | 7. Volume Profile Engine | 0/? | Not started | - |
 | 8. Regime & Multi-Timeframe VWAP | 0/? | Not started | - |
 | 9. Full Strategy Integration | 0/? | Not started | - |
