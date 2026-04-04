@@ -171,13 +171,49 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
+- [x] 08-01-PLAN.md - Build the causal session-level realized-volatility and binary regime classification core
+- [x] 08-02-PLAN.md - Add roll-bridged weekly/monthly VWAP row enrichment and stable regime join columns
+- [x] 08-03-PLAN.md - Wire deterministic Phase 8 artifacts, validation exports, and the CLI rebuild command
+
+### Phase 9: Full Strategy Integration
+**Goal**: Strategy upgraded with all available indicators for high-fidelity setup detection and flexible trade management
+**Depends on**: Phase 6, Phase 7, Phase 8
+**Requirements**: SGNL-04, SGNL-05, TSIM-06
+**Success Criteria** (what must be TRUE):
+  1. System defines and applies mechanical continuation failure detection from BBO price action (rejection pattern, failed new high/low within N bars)
+  2. Setups scored by multi-condition confluence — deviation magnitude, number of structural levels aligned, VWAP timeframe agreement
+  3. Trades support multiple exit targets — daily VWAP (primary), weekly VWAP, developing POC
+**Plans**: 2 plans
+Plans:
+- [x] 09-01-PLAN.md - Build the confluence-scoring engine and multi-target exit logic
+- [x] 09-02-PLAN.md - Implement continuation failure detection and integrate all indicators into the main simulation loop
+
+### Phase 10: Advanced Analytics
+**Goal**: Results decomposed across every analytical dimension for comprehensive edge characterization
+**Depends on**: Phase 9
+**Requirements**: ANLY-04, ANLY-05, ANLY-06, ANLY-07, ANLY-08
+**Success Criteria** (what must be TRUE):
+  1. All performance metrics broken down by gamma regime (short vs long) with statistical comparison
+  2. All performance metrics broken down by σ-band at entry (1.7-2.2σ, 2.2-3.0σ, 3.0σ+)
+  3. All performance metrics broken down by time-of-day in 15-minute buckets within the trading window
+  4. Equity curve data (cumulative P&L over time) exported for trend and drawdown analysis
+  5. Backtest results compared against model author's reference statistics — median deviation ~2.0σ, return probabilities by band, displacement ratios by regime
+**Plans**: TBD
+
+## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
 | 1. Data Pipeline Foundation | 3/3 | Complete | 2026-04-02 |
 | 2. Daily VWAP Engine | 2/2 | Internally verified; external chart validation deferred | 2026-04-02 |
 | 3. Simple Structural Levels | 2/2 | Internally verified; external chart validation deferred | 2026-04-02 |
 | 4. Setup Detection | 2/2 | Implemented; manual setup-log validation pending | 2026-04-02 |
 | 5. Trade Simulation Engine | 3/3 | Complete | 2026-04-02 |
 | 6. Core Analytics & Output | 2/2 | Complete | 2026-04-02 |
-| 7. Volume Profile Engine | 4/4 | Internally verified; external chart validation deferred | 2026-04-03 |
-| 8. Regime & Multi-Timeframe VWAP | 0/? | Not started | - |
-| 9. Full Strategy Integration | 0/? | Not started | - |
-| 10. Advanced Analytics | 0/? | Not started | - |
+| 7. Volume Profile Engine | 4/4 | Complete | 2026-04-03 |
+| 8. Regime & Multi-Timeframe VWAP | 3/3 | Complete | 2026-04-03 |
+| 9. Full Strategy Integration | 2/2 | Complete | 2026-04-03 |
+| 10. Advanced Analytics | 0/2 | Planned | - |

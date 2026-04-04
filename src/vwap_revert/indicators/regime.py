@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import polars as pl
+from .vwap import attach_daily_vwap_bands
 
 
 PHASE8_SESSION_REGIMES_ARTIFACT_NAME = "phase8_session_regimes.parquet"
@@ -170,8 +171,8 @@ def build_roll_bridge_table(df: pl.DataFrame) -> pl.DataFrame:
     return daily.select("trading_date", "front_symbol", "roll_delta")
 
 
-def _attach_anchor_ids(df: pl.DataFrame) -> pl.DataFrame:
-    """Add weekly and monthly anchor IDs derived from ET trading_date."""
+def _attach_anchor_ids(df: pl.Expr) -> pl.Expr:
+    """Add weekly and monthly anchor IDs derived from ET trading_date (Lazy-compatible)."""
     return df.with_columns(
         pl.struct(
             pl.col("trading_date").dt.iso_year().alias("iso_year"),
@@ -179,6 +180,87 @@ def _attach_anchor_ids(df: pl.DataFrame) -> pl.DataFrame:
         ).alias("weekly_anchor_id"),
         pl.col("trading_date").dt.month_start().alias("monthly_anchor_id"),
     )
+
+
+def extract_session_summaries(cache_root: Path) -> pl.DataFrame:
+    """Lazy-scan the cache to extract the close price, VWAP, and sigma for each day."""
+    
+    # We calculate session-end VWAP and Sigma from raw price/size since Phase 2 might not be cached
+    return (
+        pl.scan_parquet(cache_root, hive_partitioning=True)
+        .filter(pl.col("is_rth") & pl.col("side").is_in(["A", "B"]))
+        .group_by("trading_date")
+        .agg(
+            pl.col("price").last().alias("session_close_price"),
+            ((pl.col("price") * pl.col("size")).sum() / pl.col("size").sum()).alias("daily_vwap"),
+            (
+                ((pl.col("price")**2 * pl.col("size")).sum() / pl.col("size").sum()) - 
+                ((pl.col("price") * pl.col("size")).sum() / pl.col("size").sum())**2
+            ).clip(lower_bound=0.0).sqrt().alias("daily_sigma"),
+            pl.col("front_symbol").last().alias("front_symbol"),
+        )
+        .collect()
+        .sort("trading_date")
+    )
+
+
+def build_session_regimes_from_summaries(
+    summaries: pl.DataFrame,
+    config: SessionRegimeConfig = SessionRegimeConfig(),
+) -> pl.DataFrame:
+    """Calculates regimes from pre-extracted session summaries."""
+    sessions = summaries.sort("trading_date")
+
+    # Compute session log-returns
+    sessions = sessions.with_columns(
+        pl.col("session_close_price").shift(1).alias("prior_session_close_price")
+    ).with_columns(
+        (pl.col("session_close_price") / pl.col("prior_session_close_price")).log().alias("session_log_return")
+    )
+
+    # Compute realized volatility
+    lookback = config.lookback_sessions
+    min_history = config.min_history_sessions
+    
+    sessions = sessions.with_columns(
+        pl.col("session_log_return").shift(1).rolling_std(window_size=lookback, min_samples=1).alias("realized_volatility"),
+        pl.int_range(0, pl.len()).alias("history_session_count")
+    )
+
+    # Compute threshold
+    sessions = sessions.with_columns(
+        pl.col("realized_volatility").shift(1).rolling_median(window_size=lookback, min_samples=1).alias("regime_threshold_value")
+    )
+
+    # Apply labels
+    sessions = sessions.with_columns(
+        pl.when(pl.col("history_session_count") < min_history)
+        .then(pl.lit("insufficient_history"))
+        .when(pl.col("regime_threshold_value").is_null())
+        .then(pl.lit("threshold_unavailable"))
+        .otherwise(pl.lit("ok"))
+        .alias("regime_quality_status")
+    ).with_columns(
+        pl.when(pl.col("regime_quality_status") == "ok")
+        .then(
+            pl.when(pl.col("realized_volatility") >= pl.col("regime_threshold_value"))
+            .then(pl.lit("short_gamma"))
+            .otherwise(pl.lit("long_gamma"))
+        )
+        .otherwise(None)
+        .alias("regime_label"),
+        
+        pl.when(pl.col("regime_quality_status") == "ok")
+        .then(
+            pl.when(pl.col("realized_volatility") >= pl.col("regime_threshold_value"))
+            .then(pl.lit("rv_above_threshold"))
+            .otherwise(pl.lit("rv_below_threshold"))
+        )
+        .otherwise(None)
+        .alias("regime_reason")
+    )
+
+    return sessions
 
 
 def attach_regime_and_multi_timeframe_vwap(
@@ -356,24 +438,163 @@ def attach_regime_and_multi_timeframe_vwap(
     return enriched.sort("__row").drop("__row")
 
 
-def write_regime_and_multi_timeframe_vwap_artifacts(
-    df: pl.DataFrame,
+def write_partitioned_regime_vwap_artifacts(
+    cache_root: Path,
     output_dir: Path,
     config: SessionRegimeConfig = SessionRegimeConfig(),
 ) -> tuple[Path, Path]:
-    """Persist Phase 8 session-regime and enriched row-level artifacts."""
+    """Memory-efficient partitioned enrichment for Phase 8."""
     output_dir.mkdir(parents=True, exist_ok=True)
+    enriched_cache_root = output_dir / "regime_vwap_cache"
+    enriched_cache_root.mkdir(parents=True, exist_ok=True)
+
+    # 1. Extract summaries and compute regimes (Tiny memory footprint)
+    print("Collecting session summaries for regime calculation...")
+    summaries = extract_session_summaries(cache_root)
+    session_regimes = build_session_regimes_from_summaries(summaries, config)
     
-    session_regimes = build_session_regimes(df, config)
-    enriched = attach_regime_and_multi_timeframe_vwap(df, config)
+    # 2. Build roll bridge table
+    # Shift daily_vwap to priors
+    roll_bridge = summaries.with_columns(
+        pl.col("front_symbol").shift(1).alias("prior_symbol"),
+        pl.col("daily_vwap").shift(1).alias("prior_vwap")
+    ).with_columns(
+        pl.when(
+            pl.col("front_symbol").is_not_null() & 
+            pl.col("prior_symbol").is_not_null() & 
+            (pl.col("front_symbol") != pl.col("prior_symbol")) &
+            pl.col("daily_vwap").is_not_null() &
+            pl.col("prior_vwap").is_not_null()
+        )
+        .then(pl.col("daily_vwap") - pl.col("prior_vwap"))
+        .otherwise(0.0)
+        .alias("roll_delta")
+    ).with_columns(
+        pl.col("roll_delta").cum_sum().alias("cum_roll_shift")
+    )
+
+    # 3. Compute Weekly/Monthly VWAP accumulation tables
+    # This still requires scanning but we'll do it lazily
+    print("Computing Multi-Timeframe VWAP accumulators...")
+    full_lazy = pl.scan_parquet(cache_root, hive_partitioning=True)
+    full_lazy = full_lazy.filter(pl.col("is_rth") & pl.col("side").is_in(["A", "B"]))
+    full_lazy = _attach_anchor_ids(full_lazy)
     
+    # Add roll shift to lazy frame for price adjustment
+    # We join with our small roll_bridge table
+    trades_with_shift = full_lazy.join(roll_bridge.select("trading_date", "cum_roll_shift").lazy(), on="trading_date", how="left")
+    
+    # Accumulate Weekly
+    weekly_acc = (
+        trades_with_shift.with_columns(
+            ((pl.col("price") - pl.col("cum_roll_shift")) * pl.col("size")).alias("notional_origin")
+        )
+        .group_by("weekly_anchor_id", "trading_date", "ts_recv")
+        .agg(
+            pl.col("notional_origin").sum().alias("row_notional_origin"),
+            pl.col("size").sum().alias("row_volume"),
+        )
+        .sort(["weekly_anchor_id", "trading_date", "ts_recv"])
+        .with_columns(
+            pl.col("row_notional_origin").cum_sum().over("weekly_anchor_id").alias("weekly_cum_notional_origin"),
+            pl.col("row_volume").cum_sum().over("weekly_anchor_id").alias("weekly_cum_volume"),
+        )
+    )
+
+    # Accumulate Monthly
+    monthly_acc = (
+        trades_with_shift.with_columns(
+            ((pl.col("price") - pl.col("cum_roll_shift")) * pl.col("size")).alias("notional_origin")
+        )
+        .group_by("monthly_anchor_id", "trading_date", "ts_recv")
+        .agg(
+            pl.col("notional_origin").sum().alias("row_notional_origin_m"),
+            pl.col("size").sum().alias("row_volume_m"),
+        )
+        .sort(["monthly_anchor_id", "trading_date", "ts_recv"])
+        .with_columns(
+            pl.col("row_notional_origin_m").cum_sum().over("monthly_anchor_id").alias("monthly_cum_notional_origin"),
+            pl.col("row_volume_m").cum_sum().over("monthly_anchor_id").alias("monthly_cum_volume"),
+        )
+    )
+    
+    print("Materializing HTF accumulators to RAM...")
+    weekly_acc_df = weekly_acc.collect()
+    monthly_acc_df = monthly_acc.collect()
+
+    # 4. Partitioned Enrichment Loop
+    trading_dates = summaries["trading_date"].to_list()
+    total_days = len(trading_dates)
+    print(f"Enriching {total_days} sessions with regimes and HTF VWAP...")
+
+    for i, t_date in enumerate(trading_dates, 1):
+        if i % 20 == 0 or i == 1 or i == total_days:
+            print(f"[{i}/{total_days}] Enriching {t_date}...")
+            
+        day_path = cache_root / f"trading_date={t_date.isoformat()}" / "data.parquet"
+        if not day_path.exists():
+            continue
+            
+        day_df = pl.read_parquet(day_path).with_columns(pl.lit(t_date).alias("trading_date"))
+        
+        # 0. Ensure VWAP/Sigma present
+        if "daily_vwap" not in day_df.columns:
+            day_df = attach_daily_vwap_bands(day_df)
+            
+        # 1. Base enrichment
+        day_df = _attach_anchor_ids(day_df)
+        
+        # Join Roll Shift
+        shift_val = roll_bridge.filter(pl.col("trading_date") == t_date)["cum_roll_shift"][0]
+        
+        # Join Weekly/Monthly Acc (Filtering to current day/ts)
+        day_weekly = weekly_acc_df.filter(pl.col("trading_date") == t_date)
+        day_monthly = monthly_acc_df.filter(pl.col("trading_date") == t_date)
+        
+        # Join and Compute VWAP
+        day_enriched = day_df.join(day_weekly.select("ts_recv", "weekly_cum_notional_origin", "weekly_cum_volume"), on="ts_recv", how="left")
+        day_enriched = day_enriched.join(day_monthly.select("ts_recv", "monthly_cum_notional_origin", "monthly_cum_volume"), on="ts_recv", how="left")
+        
+        day_enriched = day_enriched.with_columns(
+            pl.col("weekly_cum_notional_origin").forward_fill(),
+            pl.col("weekly_cum_volume").forward_fill(),
+            pl.col("monthly_cum_notional_origin").forward_fill(),
+            pl.col("monthly_cum_volume").forward_fill(),
+        ).with_columns(
+            ((pl.col("weekly_cum_notional_origin") / pl.col("weekly_cum_volume")) + shift_val).alias("weekly_vwap"),
+            ((pl.col("monthly_cum_notional_origin") / pl.col("monthly_cum_volume")) + shift_val).alias("monthly_vwap"),
+        )
+        
+        # Join Regime
+        day_regime = session_regimes.filter(pl.col("trading_date") == t_date)
+        day_enriched = day_enriched.join(day_regime.select([
+            "trading_date", "regime_label", "regime_reason", 
+            "regime_quality_status", "regime_threshold_value", "history_session_count"
+        ]), on="trading_date", how="left")
+        
+        # Apply Sigma Logic
+        day_enriched = day_enriched.with_columns(
+            pl.when(pl.col("regime_label") == "short_gamma").then(1.7).when(pl.col("regime_label") == "long_gamma").then(1.5).otherwise(None).alias("regime_min_sigma"),
+            pl.when(pl.col("regime_label") == "short_gamma").then(3.2).when(pl.col("regime_label") == "long_gamma").then(2.4).otherwise(None).alias("regime_max_sigma")
+        )
+        
+        sigma_dist = (pl.col("price") - pl.col("daily_vwap")).abs() / pl.col("daily_sigma")
+        day_enriched = day_enriched.with_columns(
+            pl.when(pl.all_horizontal(pl.col("price").is_not_null(), pl.col("daily_vwap").is_not_null(), pl.col("daily_sigma").is_not_null(), pl.col("daily_sigma") != 0, pl.col("regime_min_sigma").is_not_null()))
+            .then(sigma_dist.is_between(pl.col("regime_min_sigma"), pl.col("regime_max_sigma"), closed="both"))
+            .otherwise(None).alias("regime_extension_passes")
+        )
+        
+        # Write partition
+        target_dir = enriched_cache_root / f"trading_date={t_date.isoformat()}"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        day_enriched.drop("trading_date").write_parquet(target_dir / "data.parquet", compression="zstd")
+
     session_path = output_dir / PHASE8_SESSION_REGIMES_ARTIFACT_NAME
-    enriched_path = output_dir / PHASE8_ENRICHED_ARTIFACT_NAME
-    
     session_regimes.write_parquet(session_path)
-    enriched.write_parquet(enriched_path)
     
-    return session_path, enriched_path
+    # Enriched path is now the root of the partitioned dataset
+    return session_path, enriched_cache_root
 
 
 def write_regime_and_multi_timeframe_validation_export(
@@ -398,7 +619,6 @@ def write_regime_and_multi_timeframe_validation_export(
         "trading_date", "ts_recv_et", "weekly_vwap", "monthly_vwap", 
         "regime_label", "regime_reason", "regime_quality_status", 
         "regime_threshold_value", "history_session_count", 
-        "weekly_roll_adjustment_applied", "monthly_roll_adjustment_applied"
     ]
     filtered.select(val_cols).write_csv(csv_path)
     

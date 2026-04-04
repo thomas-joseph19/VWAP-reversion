@@ -37,6 +37,12 @@ class SimulationConfig:
     tick_size: float = 0.25
     tick_value: float = 5.0
     session_exit_time: time = time(16, 0)
+    units: int = 2
+    break_even_on_t1: bool = True
+    profit_target_multiple: float = 1.0  # (T2)
+    t1_profit_target_multiple: float = 0.5
+    stop_loss_multiple: float = 1.0
+    max_hold_seconds: int = 3600
 
 
 @dataclass(frozen=True)
@@ -79,12 +85,18 @@ def _output_trade_columns() -> list[str]:
         "exit_ts",
         "exit_price",
         "exit_reason",
+        "exit_1_price",
+        "exit_1_ts",
+        "exit_2_price",
+        "exit_2_ts",
         "target_price",
+        "target_2_price",
         "gross_points",
         "net_dollars",
         "mae_points",
         "duration_seconds",
         "setup_sigma_signed",
+        "confluence_score",
         "nearest_structural_level",
         "nearest_structural_distance",
         "regime_label",
@@ -134,11 +146,14 @@ def _validation_export_columns() -> list[str]:
         "entry_price",
         "exit_price",
         "exit_reason",
+        "exit_1_price",
+        "exit_2_price",
         "gross_points",
         "net_dollars",
         "mae_points",
         "duration_seconds",
         "setup_sigma_signed",
+        "confluence_score",
         "nearest_structural_level",
         "nearest_structural_distance",
         "regime_label",
@@ -210,9 +225,15 @@ def open_trade_from_setup(setup: Mapping[str, object], config: SimulationConfig)
             additional_slippage_points=config.additional_slippage_points,
         ),
         "signal_ts": signal_ts,
-        "target_price": float(daily_vwap),
+        "target_price": entry_fill_price(setup, direction, config.additional_slippage_points) + (
+            float(daily_vwap) - entry_fill_price(setup, direction, config.additional_slippage_points)
+        ) * config.t1_profit_target_multiple,
+        "target_2_price": entry_fill_price(setup, direction, config.additional_slippage_points) + (
+            float(daily_vwap) - entry_fill_price(setup, direction, config.additional_slippage_points)
+        ) * config.profit_target_multiple,
         "daily_vwap": float(daily_vwap),
         "setup_sigma_signed": float(setup_sigma_signed),
+        "confluence_score": float(setup.get("confluence_score", 0.0)),
         "nearest_structural_level": setup.get("nearest_structural_level"),
         "nearest_structural_distance": (
             None
@@ -221,11 +242,12 @@ def open_trade_from_setup(setup: Mapping[str, object], config: SimulationConfig)
         ),
         "regime_label": None if setup.get("regime_label") is None else str(setup.get("regime_label")),
         "regime_reason": None if setup.get("regime_reason") is None else str(setup.get("regime_reason")),
-        "stop_loss_points": config.stop_loss_points,
+        "stop_loss_points": config.stop_loss_points * config.stop_loss_multiple,
         "round_trip_commission": config.round_trip_commission,
         "additional_slippage_points": config.additional_slippage_points,
         "status": "open",
         "entry_reason": "setup_event",
+        "profit_target_multiple": config.profit_target_multiple,
     }
 
 
@@ -240,12 +262,14 @@ def replay_single_trade(
     signal_ts = _require_datetime(trade, "signal_ts")
     entry_price = float(trade.get("entry_price", 0.0))
     target_price = float(trade.get("target_price", 0.0))
+    target_2_price = float(trade.get("target_2_price", target_price))
     stop_loss_points = float(trade.get("stop_loss_points", config.stop_loss_points))
     additional_slippage_points = float(
         trade.get("additional_slippage_points", config.additional_slippage_points)
     )
     round_trip_commission = float(trade.get("round_trip_commission", config.round_trip_commission))
     setup_sigma_signed = float(trade.get("setup_sigma_signed", 0.0))
+    confluence_score = float(trade.get("confluence_score", 0.0))
     nearest_structural_level = (
         None if trade.get("nearest_structural_level") is None else str(trade.get("nearest_structural_level"))
     )
@@ -263,8 +287,15 @@ def replay_single_trade(
     if ordered_rows.is_empty():
         raise ValueError("No replay rows available for trade")
 
+    units_open = config.units
+    exit_1_price: float | None = None
+    exit_1_ts: datetime | None = None
+    exit_2_price: float | None = None
+    exit_2_ts: datetime | None = None
+    exit_reason: str = "open"
     mae_points = 0.0
-    session_end_row: Mapping[str, object] | None = None
+    
+    active_stop_loss_points = stop_loss_points
 
     for row in ordered_rows.iter_rows(named=True):
         ts_recv_et = _require_datetime(row, "ts_recv_et")
@@ -278,81 +309,117 @@ def replay_single_trade(
         )
         mae_points = max(mae_points, adverse_move)
 
-        target_hit = (
-            exit_side_price >= target_price if direction == "long" else exit_side_price <= target_price
-        )
-        stop_hit = adverse_move >= stop_loss_points
-        if stop_hit or target_hit:
-            exit_reason = "stop_loss" if stop_hit else "target_vwap"
-            exit_price = exit_fill_price(
-                row,
-                direction,
-                additional_slippage_points=additional_slippage_points,
-            )
-            exit_ts = _require_datetime(row, "ts_recv")
-            gross_points = pnl_points(direction, entry_price, exit_price)
-            return {
-                "trading_date": trading_date,
-                "direction": direction,
-                "signal_ts": signal_ts,
-                "entry_ts": entry_ts,
-                "entry_price": entry_price,
-                "exit_ts": exit_ts,
-                "exit_price": exit_price,
-                "exit_reason": exit_reason,
-                "target_price": target_price,
-                "gross_points": gross_points,
-                "net_dollars": pnl_dollars(
-                    direction,
-                    entry_price,
-                    exit_price,
-                    point_value=config.point_value,
-                    round_trip_commission=round_trip_commission,
-                ),
-                "mae_points": mae_points,
-                "duration_seconds": (exit_ts - entry_ts).total_seconds(),
-                "setup_sigma_signed": setup_sigma_signed,
-                "nearest_structural_level": nearest_structural_level,
-                "nearest_structural_distance": nearest_structural_distance,
-                "regime_label": regime_label,
-                "regime_reason": regime_reason,
-            }
-
-        if ts_recv_et.timetz().replace(tzinfo=None) >= config.session_exit_time:
-            session_end_row = row
+        # 1. Check Stop Loss
+        stop_hit = adverse_move >= active_stop_loss_points
+        if stop_hit:
+            exit_reason = "stop_loss"
+            final_exit_price = exit_fill_price(row, direction, additional_slippage_points)
+            if exit_1_price is None:
+                exit_1_price = final_exit_price
+                exit_1_ts = _require_datetime(row, "ts_recv")
+            exit_2_price = final_exit_price
+            exit_2_ts = _require_datetime(row, "ts_recv")
+            units_open = 0
             break
 
-    if session_end_row is None:
-        raise ValueError("Trade remained open without a session-end liquidation row")
+        # 2. Check Targets
+        if units_open == 2:
+            target_1_hit = (
+                exit_side_price >= target_price if direction == "long" else exit_side_price <= target_price
+            )
+            if target_1_hit:
+                exit_1_price = exit_fill_price(row, direction, additional_slippage_points)
+                exit_1_ts = _require_datetime(row, "ts_recv")
+                units_open = 1
+                if config.break_even_on_t1:
+                    active_stop_loss_points = 0.0 # Move stop to entry
+        
+        if units_open == 1:
+            target_2_hit = (
+                exit_side_price >= target_2_price if direction == "long" else exit_side_price <= target_2_price
+            )
+            if target_2_hit:
+                exit_2_price = exit_fill_price(row, direction, additional_slippage_points)
+                exit_2_ts = _require_datetime(row, "ts_recv")
+                units_open = 0
+                exit_reason = "target_vwap"
+                break
 
-    exit_price = exit_fill_price(
-        session_end_row,
-        direction,
-        additional_slippage_points=additional_slippage_points,
-    )
-    exit_ts = _require_datetime(session_end_row, "ts_recv")
-    gross_points = pnl_points(direction, entry_price, exit_price)
+        last_row = row
+        # 3. Check Session End
+
+        # 3. Check Session End
+        if ts_recv_et.timetz().replace(tzinfo=None) >= config.session_exit_time:
+            exit_reason = "session_end"
+            final_exit_price = exit_fill_price(row, direction, additional_slippage_points)
+            if exit_1_price is None:
+                exit_1_price = final_exit_price
+                exit_1_ts = _require_datetime(row, "ts_recv")
+            exit_2_price = final_exit_price
+            exit_2_ts = _require_datetime(row, "ts_recv")
+            units_open = 0
+            break
+
+        # 4. Check Time Stop
+        if (_require_datetime(row, "ts_recv") - entry_ts).total_seconds() >= config.max_hold_seconds:
+            exit_reason = "time_stop"
+            final_exit_price = exit_fill_price(row, direction, additional_slippage_points)
+            if exit_1_price is None:
+                exit_1_price = final_exit_price
+                exit_1_ts = _require_datetime(row, "ts_recv")
+            exit_2_price = final_exit_price
+            exit_2_ts = _require_datetime(row, "ts_recv")
+            units_open = 0
+            break
+
+    # 4. Handle End of Data (Fallback)
+    if units_open > 0:
+        exit_reason = "end_of_data"
+        final_exit_price = exit_fill_price(last_row, direction, additional_slippage_points)
+        if exit_1_price is None:
+            exit_1_price = final_exit_price
+            exit_1_ts = _require_datetime(last_row, "ts_recv")
+        exit_2_price = final_exit_price
+        exit_2_ts = _require_datetime(last_row, "ts_recv")
+        units_open = 0
+
+    # Result Construction
+    final_exit_price = exit_2_price if exit_2_price is not None else exit_1_price
+    final_exit_ts = exit_2_ts if exit_2_ts is not None else exit_1_ts
+    
+    # Economics: Average of unit exits
+    # We assumed 2 units. 1 unit exited at exit_1, 1 unit at exit_2.
+    if exit_1_price is None or exit_2_price is None:
+        # Fallback for session end or early stop
+        pnl_1 = pnl_dollars(direction, entry_price, final_exit_price, config.point_value, round_trip_commission / 2)
+        pnl_2 = pnl_dollars(direction, entry_price, final_exit_price, config.point_value, round_trip_commission / 2)
+        gross_points = pnl_points(direction, entry_price, final_exit_price)
+    else:
+        pnl_1 = pnl_dollars(direction, entry_price, exit_1_price, config.point_value, round_trip_commission / 2)
+        pnl_2 = pnl_dollars(direction, entry_price, exit_2_price, config.point_value, round_trip_commission / 2)
+        gross_points = (pnl_points(direction, entry_price, exit_1_price) + pnl_points(direction, entry_price, exit_2_price)) / 2
+        
     return {
         "trading_date": trading_date,
         "direction": direction,
         "signal_ts": signal_ts,
         "entry_ts": entry_ts,
         "entry_price": entry_price,
-        "exit_ts": exit_ts,
-        "exit_price": exit_price,
-        "exit_reason": "session_end",
+        "exit_ts": final_exit_ts,
+        "exit_price": final_exit_price,
+        "exit_reason": exit_reason,
+        "exit_1_price": exit_1_price,
+        "exit_1_ts": exit_1_ts,
+        "exit_2_price": exit_2_price,
+        "exit_2_ts": exit_2_ts,
         "target_price": target_price,
+        "target_2_price": target_2_price,
         "gross_points": gross_points,
-        "net_dollars": pnl_dollars(
-            direction,
-            entry_price,
-            exit_price,
-            point_value=config.point_value,
-            round_trip_commission=round_trip_commission,
-        ),
+        "net_dollars": pnl_1 + pnl_2,
         "mae_points": mae_points,
-        "duration_seconds": (exit_ts - entry_ts).total_seconds(),
+        "duration_seconds": (final_exit_ts - entry_ts).total_seconds(),
         "setup_sigma_signed": setup_sigma_signed,
+        "confluence_score": confluence_score,
         "nearest_structural_level": nearest_structural_level,
         "nearest_structural_distance": nearest_structural_distance,
         "regime_label": regime_label,

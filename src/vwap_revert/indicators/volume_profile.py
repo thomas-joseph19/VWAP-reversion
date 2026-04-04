@@ -68,6 +68,7 @@ _VALIDATION_COLUMNS = [
     "phase7_quality_status",
     "htf_source_session_count",
     "htf_roll_mixed_window",
+    "structural_levels_within_threshold",
 ]
 
 
@@ -212,13 +213,34 @@ def _build_session_summary(
     )
 
 
-def build_daily_rth_profiles(
-    df: pl.DataFrame,
+def build_daily_rth_profiles_from_cache(
+    cache_root: Path,
     bucket_size: float = DEFAULT_BUCKET_SIZE,
 ) -> pl.DataFrame:
-    """Build one completed RTH profile row per trading date."""
+    """Build one completed RTH profile row per trading date using partitioned scan."""
 
-    trade_rows = _trade_rows(df, "is_rth")
+    # 1. Detect all sessions
+    full_lazy = pl.scan_parquet(cache_root, hive_partitioning=True)
+    trade_rows_lazy = full_lazy.filter(pl.col("is_rth") & pl.col("side").is_in(_TRADE_SIDES))
+    
+    # We aggregate per-day histograms lazily to avoid loading all tick data
+    # Polars can group_by and agg efficiently on partitioned data
+    print("Collecting daily RTH histograms...")
+    
+    # Actually, to getvah/val/poc precisely as before, we might need the full histogram.
+    # But we can snap price first.
+    histogram_daily = (
+        trade_rows_lazy.with_columns(
+            (pl.col("price") / bucket_size).round() * bucket_size
+        )
+        .group_by("trading_date", "price")
+        .agg(pl.col("size").sum().alias("volume"))
+        .collect()
+        .sort(["trading_date", "price"])
+    )
+    
+    # Now build the profiles
+    trading_dates = sorted(histogram_daily["trading_date"].unique().to_list())
     rows: list[dict[str, object]] = []
     prior_levels: dict[str, float | None] = {
         "prior_rth_poc": None,
@@ -226,122 +248,128 @@ def build_daily_rth_profiles(
         "prior_rth_val": None,
     }
 
-    for trading_date_value in sorted(trade_rows["trading_date"].unique().to_list()):
-        session_rows = trade_rows.filter(pl.col("trading_date") == trading_date_value)
-        summary = _build_session_summary(
-            session_rows,
-            bucket_size=bucket_size,
-            poc_column="daily_rth_poc",
-            vah_column="daily_rth_vah",
-            val_column="daily_rth_val",
+    for t_date in trading_dates:
+        session_hist = histogram_daily.filter(pl.col("trading_date") == t_date)
+        
+        # Get symbol
+        front_symbol = (
+            pl.scan_parquet(cache_root / f"trading_date={t_date.isoformat()}" / "data.parquet")
+            .select("front_symbol")
+            .tail(1)
+            .collect()["front_symbol"][0]
         )
-        rows.append(
-            {
-                "trading_date": trading_date_value,
-                "profile_family": "daily_rth",
-                "source_trading_date": trading_date_value,
-                "bucket_size": summary.bucket_size,
-                "bucket_prices": summary.bucket_prices,
-                "bucket_volumes": summary.bucket_volumes,
-                "daily_rth_poc": summary.poc,
-                "daily_rth_vah": summary.vah,
-                "daily_rth_val": summary.val,
-                **prior_levels,
-                "lvn_prices": summary.lvn_prices,
-                "profile_trade_rows": summary.profile_trade_rows,
-                "profile_total_volume": summary.profile_total_volume,
-                "quality_status": summary.quality_status,
-                "front_symbol": summary.front_symbol,
-            }
+
+        bucket_prices = session_hist["price"].to_list()
+        bucket_volumes = session_hist["volume"].to_list()
+        
+        profile_levels = _compute_session_levels(
+            pl.DataFrame({
+                "trading_date": [t_date] * len(bucket_prices),
+                "price": bucket_prices,
+                "size": bucket_volumes,
+                "is_rth": [True] * len(bucket_prices),
+                "side": ["A"] * len(bucket_prices),
+                "ts_recv": [None] * len(bucket_prices),
+            })
         )
+        
+        lvn_prices = detect_lvn_prices(bucket_prices, bucket_volumes)
+        
+        rows.append({
+            "trading_date": t_date,
+            "profile_family": "daily_rth",
+            "source_trading_date": t_date,
+            "bucket_size": bucket_size,
+            "bucket_prices": bucket_prices,
+            "bucket_volumes": bucket_volumes,
+            "daily_rth_poc": None if profile_levels is None else float(profile_levels.poc),
+            "daily_rth_vah": None if profile_levels is None else float(profile_levels.vah),
+            "daily_rth_val": None if profile_levels is None else float(profile_levels.val),
+            **prior_levels,
+            "lvn_prices": lvn_prices,
+            "profile_trade_rows": len(bucket_prices),
+            "profile_total_volume": float(sum(bucket_volumes)),
+            "quality_status": "ok" if profile_levels is not None else "no_trade_rows",
+            "front_symbol": front_symbol,
+        })
+        
         prior_levels = {
-            "prior_rth_poc": summary.poc,
-            "prior_rth_vah": summary.vah,
-            "prior_rth_val": summary.val,
+            "prior_rth_poc": rows[-1]["daily_rth_poc"],
+            "prior_rth_vah": rows[-1]["daily_rth_vah"],
+            "prior_rth_val": rows[-1]["daily_rth_val"],
         }
 
-    return _empty_profile_frame(
-        rows,
-        "trading_date",
-        [
-            "trading_date",
-            "profile_family",
-            "source_trading_date",
-            "bucket_size",
-            "bucket_prices",
-            "bucket_volumes",
-            "daily_rth_poc",
-            "daily_rth_vah",
-            "daily_rth_val",
-            "prior_rth_poc",
-            "prior_rth_vah",
-            "prior_rth_val",
-            "lvn_prices",
-            "profile_trade_rows",
-            "profile_total_volume",
-            "quality_status",
-            "front_symbol",
-        ],
-    )
+    return pl.DataFrame(rows)
 
 
-def build_overnight_profiles(
-    df: pl.DataFrame,
+def build_overnight_profiles_from_cache(
+    cache_root: Path,
     bucket_size: float = DEFAULT_BUCKET_SIZE,
 ) -> pl.DataFrame:
-    """Build same-day completed overnight profiles keyed by trading date."""
+    """Build completed overnight profiles keyed by trading date using partitioned scan."""
 
-    trade_rows = _trade_rows(df, "is_overnight")
+    full_lazy = pl.scan_parquet(cache_root, hive_partitioning=True)
+    on_rows_lazy = full_lazy.filter(pl.col("is_overnight") & pl.col("side").is_in(_TRADE_SIDES))
+    
+    print("Collecting overnight histograms...")
+    histogram_on = (
+        on_rows_lazy.with_columns(
+            (pl.col("price") / bucket_size).round() * bucket_size
+        )
+        .group_by("trading_date", "price")
+        .agg(pl.col("size").sum().alias("volume"))
+        .collect()
+        .sort(["trading_date", "price"])
+    )
+    
+    trading_dates = sorted(histogram_on["trading_date"].unique().to_list())
     rows: list[dict[str, object]] = []
 
-    for trading_date_value in sorted(trade_rows["trading_date"].unique().to_list()):
-        session_rows = trade_rows.filter(pl.col("trading_date") == trading_date_value)
-        summary = _build_session_summary(
-            session_rows,
-            bucket_size=bucket_size,
-            poc_column="overnight_poc",
-            vah_column="overnight_vah",
-            val_column="overnight_val",
-        )
-        rows.append(
-            {
-                "trading_date": trading_date_value,
-                "profile_family": "overnight",
-                "source_trading_date": trading_date_value,
-                "bucket_size": summary.bucket_size,
-                "bucket_prices": summary.bucket_prices,
-                "bucket_volumes": summary.bucket_volumes,
-                "overnight_poc": summary.poc,
-                "overnight_vah": summary.vah,
-                "overnight_val": summary.val,
-                "lvn_prices": summary.lvn_prices,
-                "profile_trade_rows": summary.profile_trade_rows,
-                "profile_total_volume": summary.profile_total_volume,
-                "quality_status": summary.quality_status,
-                "front_symbol": summary.front_symbol,
-            }
+    for t_date in trading_dates:
+        session_hist = histogram_on.filter(pl.col("trading_date") == t_date)
+        
+        # Get symbol
+        front_symbol = (
+            pl.scan_parquet(cache_root / f"trading_date={t_date.isoformat()}" / "data.parquet")
+            .select("front_symbol")
+            .tail(1)
+            .collect()["front_symbol"][0]
         )
 
-    return _empty_profile_frame(
-        rows,
-        "trading_date",
-        [
-            "trading_date",
-            "profile_family",
-            "source_trading_date",
-            "bucket_size",
-            "bucket_prices",
-            "bucket_volumes",
-            "overnight_poc",
-            "overnight_vah",
-            "overnight_val",
-            "lvn_prices",
-            "profile_trade_rows",
-            "profile_total_volume",
-            "quality_status",
-            "front_symbol",
-        ],
-    )
+        bucket_prices = session_hist["price"].to_list()
+        bucket_volumes = session_hist["volume"].to_list()
+        
+        profile_levels = _compute_session_levels(
+            pl.DataFrame({
+                "trading_date": [t_date] * len(bucket_prices),
+                "price": bucket_prices,
+                "size": bucket_volumes,
+                "is_rth": [True] * len(bucket_prices), # ON levels use same math
+                "side": ["A"] * len(bucket_prices),
+                "ts_recv": [None] * len(bucket_prices),
+            })
+        )
+        
+        lvn_prices = detect_lvn_prices(bucket_prices, bucket_volumes)
+        
+        rows.append({
+            "trading_date": t_date,
+            "profile_family": "overnight",
+            "source_trading_date": t_date,
+            "bucket_size": bucket_size,
+            "bucket_prices": bucket_prices,
+            "bucket_volumes": bucket_volumes,
+            "overnight_poc": None if profile_levels is None else float(profile_levels.poc),
+            "overnight_vah": None if profile_levels is None else float(profile_levels.vah),
+            "overnight_val": None if profile_levels is None else float(profile_levels.val),
+            "lvn_prices": lvn_prices,
+            "profile_trade_rows": len(bucket_prices),
+            "profile_total_volume": float(sum(bucket_volumes)),
+            "quality_status": "ok" if profile_levels is not None else "no_trade_rows",
+            "front_symbol": front_symbol,
+        })
+
+    return pl.DataFrame(rows)
 
 
 def _aggregate_histograms(window: pl.DataFrame) -> tuple[list[float], list[float]]:
@@ -749,38 +777,205 @@ def attach_volume_profile_levels(
     )
 
 
-def write_volume_profile_artifacts(
-    df: pl.DataFrame,
+def write_partitioned_volume_profile_artifacts(
+    cache_root: Path,
     output_dir: Path,
     proximity_threshold_points: float = 10.0,
     bucket_size: float = DEFAULT_BUCKET_SIZE,
     htf_lookback_sessions: int = DEFAULT_HTF_LOOKBACK_SESSIONS,
 ) -> tuple[Path, Path, Path, Path]:
-    """Persist deterministic Phase 7 profile-family and enriched artifacts."""
+    """Persist Phase 7 profile-family and enriched artifacts using partitioned logic."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    daily_profiles = build_daily_rth_profiles(df, bucket_size=bucket_size)
-    overnight_profiles = build_overnight_profiles(df, bucket_size=bucket_size)
+    enriched_cache_root = output_dir / "volume_profile_cache"
+    enriched_cache_root.mkdir(parents=True, exist_ok=True)
+
+    # 1. Build Summaries
+    daily_profiles = build_daily_rth_profiles_from_cache(cache_root, bucket_size=bucket_size).sort("trading_date")
+    overnight_profiles = build_overnight_profiles_from_cache(cache_root, bucket_size=bucket_size).sort("trading_date")
     htf_profiles = build_htf_profiles(
         daily_profiles,
         lookback_sessions=htf_lookback_sessions,
-    )
-    enriched = attach_volume_profile_levels(
-        df,
-        proximity_threshold_points=proximity_threshold_points,
-        bucket_size=bucket_size,
-        htf_lookback_sessions=htf_lookback_sessions,
-    )
+    ).sort("trading_date")
+    
+    # 2. Build Prior RTH Table (Shift 1)
+    prior_rth_profiles = daily_profiles.with_columns(
+        pl.col("daily_rth_poc").shift(1).alias("prior_rth_poc"),
+        pl.col("daily_rth_vah").shift(1).alias("prior_rth_vah"),
+        pl.col("daily_rth_val").shift(1).alias("prior_rth_val"),
+    ).select("trading_date", "prior_rth_poc", "prior_rth_vah", "prior_rth_val")
+
+    # 3. Sequential Enrichment Loop
+    trading_dates = daily_profiles["trading_date"].to_list()
+    total_days = len(trading_dates)
+    print(f"Enriching {total_days} sessions with volume profile levels...")
+
+    for i, t_date in enumerate(trading_dates, 1):
+        if i % 20 == 0 or i == 1 or i == total_days:
+            print(f"[{i}/{total_days}] Enriching {t_date}...")
+            
+        day_path = cache_root / f"trading_date={t_date.isoformat()}" / "data.parquet"
+        if not day_path.exists():
+            continue
+            
+        day_df = pl.read_parquet(day_path).with_columns(pl.lit(t_date).alias("trading_date"))
+        
+        # Attach levels
+        # We need to provide the full profiles to the attach helper for that day
+        # But attach_volume_profile_levels expects the full dataframe to build summaries internally.
+        # I'll create a single-day version or just use the pre-computed summaries.
+        
+        # Actually I'll refactor attach_volume_profile_levels to take pre-computed profiles.
+        day_prior_rth = prior_rth_profiles.filter(pl.col("trading_date") == t_date)
+        
+        day_enriched = _attach_precomputed_volume_profile_levels(
+            day_df,
+            overnight_profiles=overnight_profiles.filter(pl.col("trading_date") == t_date),
+            htf_profiles=htf_profiles.filter(pl.col("trading_date") == t_date),
+            prior_rth_profiles=day_prior_rth,
+            proximity_threshold_points=proximity_threshold_points,
+            bucket_size=bucket_size,
+        )
+        
+        # Write partition
+        target_dir = enriched_cache_root / f"trading_date={t_date.isoformat()}"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        day_enriched.drop("trading_date").write_parquet(target_dir / "data.parquet", compression="zstd")
 
     daily_path = output_dir / PHASE7_DAILY_ARTIFACT_NAME
     overnight_path = output_dir / PHASE7_OVERNIGHT_ARTIFACT_NAME
     htf_path = output_dir / PHASE7_HTF_ARTIFACT_NAME
-    enriched_path = output_dir / PHASE7_ENRICHED_ARTIFACT_NAME
+    
     daily_profiles.write_parquet(daily_path)
     overnight_profiles.write_parquet(overnight_path)
     htf_profiles.write_parquet(htf_path)
-    enriched.write_parquet(enriched_path)
-    return daily_path, overnight_path, htf_path, enriched_path
+    
+    return daily_path, overnight_path, htf_path, enriched_cache_root
+
+
+def _attach_precomputed_volume_profile_levels(
+    df: pl.DataFrame,
+    overnight_profiles: pl.DataFrame,
+    htf_profiles: pl.DataFrame,
+    prior_rth_profiles: pl.DataFrame,
+    proximity_threshold_points: float = 10.0,
+    bucket_size: float = DEFAULT_BUCKET_SIZE,
+) -> pl.DataFrame:
+    """Internal helper to attach levels using pre-computed summaries for a specific timeframe."""
+
+    # 1. Attach Structural Levels (VWAP-based)
+    enriched = attach_prior_day_structural_levels(
+        df,
+        proximity_threshold_points=proximity_threshold_points,
+    )
+    
+    # 2. Join Precomputed Profiles
+    bid_col = pl.col("bid_px_00") if "bid_px_00" in df.columns else pl.lit(None)
+    ask_col = pl.col("ask_px_00") if "ask_px_00" in df.columns else pl.lit(None)
+    phase7_reference_price = (
+        pl.when(pl.col("side").is_in(_TRADE_SIDES))
+        .then(pl.col("price"))
+        .when(pl.all_horizontal(bid_col.is_not_null(), ask_col.is_not_null()))
+        .then((bid_col + ask_col) / 2.0)
+        .when(bid_col.is_not_null())
+        .then(bid_col)
+        .when(ask_col.is_not_null())
+        .then(ask_col)
+        .otherwise(None)
+        .alias("phase7_reference_price")
+    )
+
+    joined = (
+        enriched.join(
+            overnight_profiles.select(
+                "trading_date",
+                "overnight_poc",
+                "overnight_vah",
+                "overnight_val",
+                pl.col("quality_status").alias("overnight_quality_status"),
+            ),
+            on="trading_date",
+            how="left",
+        )
+        .join(
+            htf_profiles.select(
+                "trading_date",
+                "htf_poc",
+                "htf_vah",
+                "htf_val",
+                "lvn_prices",
+                pl.col("source_session_count").alias("htf_source_session_count"),
+                "window_complete",
+                pl.col("roll_mixed_window").alias("htf_roll_mixed_window"),
+                pl.col("quality_status").alias("phase7_quality_status"),
+                "roll_adjustment_applied",
+                "roll_anchor_symbol",
+            ),
+            on="trading_date",
+            how="left",
+        )
+        .join(
+            prior_rth_profiles.select(
+                "trading_date", "prior_rth_poc", "prior_rth_vah", "prior_rth_val"
+            ),
+            on="trading_date",
+            how="left",
+        )
+        .with_columns(phase7_reference_price)
+    )
+
+    # 3. LVN Search
+    joined = joined.with_columns(
+        pl.struct("phase7_reference_price", "lvn_prices")
+        .map_elements(_pick_nearest_lvn_above, return_dtype=pl.Float64)
+        .alias("htf_nearest_lvn_above"),
+        pl.struct("phase7_reference_price", "lvn_prices")
+        .map_elements(_pick_nearest_lvn_below, return_dtype=pl.Float64)
+        .alias("htf_nearest_lvn_below"),
+    )
+
+    # 4. Distances
+    for label in _PHASE7_LEVEL_ORDER:
+        source_column = label
+        if label == "htf_lvn_above":
+            source_column = "htf_nearest_lvn_above"
+        elif label == "htf_lvn_below":
+            source_column = "htf_nearest_lvn_below"
+        else:
+            # Check if source_column exists
+            if source_column not in joined.columns:
+                joined = joined.with_columns(pl.lit(None, dtype=pl.Float64).alias(f"distance_to_{label}"))
+                continue
+
+        joined = joined.with_columns(
+            (pl.col("phase7_reference_price") - pl.col(source_column)).alias(f"distance_to_{label}")
+        )
+
+    # 5. Result Selection
+    nearest_struct = pl.struct(
+        *[pl.col(f"distance_to_{label}") for label in _PHASE7_LEVEL_ORDER]
+    ).map_elements(
+        _pick_phase7_nearest_level,
+        return_dtype=pl.Struct({"label": pl.Utf8, "distance": pl.Float64}),
+    )
+
+    threshold_terms = [
+        pl.when(pl.col(f"distance_to_{label}").is_not_null())
+        .then(pl.col(f"distance_to_{label}").abs() <= proximity_threshold_points)
+        .otherwise(False)
+        .cast(pl.Int64)
+        for label in _PHASE7_LEVEL_ORDER
+    ]
+
+    return (
+        joined.with_columns(nearest_struct.alias("__phase7_nearest"))
+        .with_columns(
+            pl.col("__phase7_nearest").struct.field("label").alias("phase7_nearest_structural_level"),
+            pl.col("__phase7_nearest").struct.field("distance").alias("phase7_nearest_structural_distance"),
+            sum(threshold_terms).alias("structural_levels_within_threshold"),
+        )
+        .drop("__phase7_nearest", "lvn_prices")
+    )
 
 
 def write_volume_profile_validation_export(

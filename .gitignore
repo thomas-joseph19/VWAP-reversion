@@ -3,3 +3,10 @@ __pycache__/
 .tmp_pytest/
 pytest-cache-files-*/
 tmp*/
+data/
+results/
+*.parquet
+*.csv
+*.json
+!**/.planning/**/*.json
+!**/.planning/**/*.md

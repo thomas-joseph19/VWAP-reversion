@@ -14,6 +14,10 @@ PHASE6_TRADE_LOG_CSV_NAME = "phase6_trade_log.csv"
 PHASE6_METRICS_JSON_NAME = "phase6_metrics.json"
 PHASE6_VALIDATION_EXPORT_NAME = "core_analytics_validation_export.csv"
 PHASE6_VALIDATION_MANIFEST_NAME = "validation_sessions.json"
+
+PHASE10_ANALYTICS_REPORT_NAME = "phase10_analytics_report.json"
+PHASE10_EQUITY_CURVE_NAME = "phase10_equity_curve.parquet"
+
 DEFAULT_TICK_SIZE = 0.25
 SHARPE_CONVENTION = "mean(net_dollars) / sample_std(net_dollars) * sqrt(trade_count); null if trade_count < 2 or std == 0"
 
@@ -28,6 +32,14 @@ def prepare_trade_log(trade_log: pl.DataFrame, tick_size: float = DEFAULT_TICK_S
         pl.col("gross_points").alias("pnl_points"),
         (pl.col("gross_points") / tick_size).alias("pnl_ticks"),
         pl.col("setup_sigma_signed").alias("sigma_at_entry"),
+    ).with_columns(
+        pl.when(pl.col("sigma_at_entry").abs() < 2.2)
+        .then(pl.lit("1.7-2.2"))
+        .when(pl.col("sigma_at_entry").abs() < 3.0)
+        .then(pl.lit("2.2-3.0"))
+        .otherwise(pl.lit("3.0+"))
+        .alias("sigma_band"),
+        pl.col("entry_ts").dt.truncate("15m").dt.time().alias("time_bucket_15m"),
     )
     return prepared.sort("entry_ts")
 
@@ -96,6 +108,45 @@ def compute_performance_metrics(trade_log: pl.DataFrame) -> dict[str, object]:
     }
 
 
+def compute_performance_breakdowns(trade_log: pl.DataFrame) -> dict[str, dict[str, object]]:
+    """Compute performance metrics grouped by regime, sigma band, and time-of-day."""
+    
+    breakdowns = {}
+    
+    dimensions = ["regime_label", "sigma_band", "time_bucket_15m"]
+    for dim in dimensions:
+        if dim not in trade_log.columns:
+            continue
+            
+        group_stats = (
+            trade_log.group_by(dim)
+            .agg([
+                pl.len().alias("trade_count"),
+                pl.col("net_dollars").filter(pl.col("net_dollars") > 0).len().alias("wins"),
+                pl.col("net_dollars").filter(pl.col("net_dollars") < 0).len().alias("losses"),
+                pl.col("net_dollars").filter(pl.col("net_dollars") > 0).sum().alias("gross_profit"),
+                pl.col("net_dollars").filter(pl.col("net_dollars") < 0).sum().abs().alias("gross_loss"),
+                pl.col("net_dollars").sum().alias("total_net_dollars"),
+                pl.col("net_dollars").mean().alias("avg_net_dollars"),
+            ])
+            .with_columns([
+                (pl.col("wins") / pl.col("trade_count")).alias("win_rate"),
+                (pl.col("gross_profit") / pl.col("gross_loss")).alias("profit_factor"),
+            ])
+            .sort(dim)
+        )
+        
+        # Convert to dictionary with string keys (especially for time buckets)
+        breakdowns[dim] = {
+            str(row[dim]): {
+                k: v for k, v in row.items() if k != dim
+            }
+            for row in group_stats.to_dicts()
+        }
+    
+    return breakdowns
+
+
 def write_core_analytics_artifacts(
     phase5_root: Path,
     output_root: Path,
@@ -115,12 +166,30 @@ def write_core_analytics_artifacts(
     phase5_trade_log = pl.read_parquet(phase5_root / PHASE5_TRADE_LOG_ARTIFACT_NAME)
     prepared_trade_log = prepare_trade_log(phase5_trade_log, tick_size=tick_size)
     metrics = compute_performance_metrics(prepared_trade_log)
-
+    breakdowns = compute_performance_breakdowns(prepared_trade_log)
+    
+    # 1. Core artifacts
     trade_log_csv_path = output_root / PHASE6_TRADE_LOG_CSV_NAME
     metrics_json_path = output_root / PHASE6_METRICS_JSON_NAME
     prepared_trade_log.write_csv(trade_log_csv_path)
     metrics_json_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    
+    # 2. Phase 10 artifacts
+    report = {
+        "overall": metrics,
+        "breakdowns": breakdowns,
+    }
+    report_path = output_root / PHASE10_ANALYTICS_REPORT_NAME
+    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    
+    equity_curve = (
+        prepared_trade_log.select(["entry_ts", "net_dollars"])
+        .with_columns(pl.col("net_dollars").cum_sum().alias("cumulative_pnl_dollars"))
+    )
+    equity_curve_path = output_root / PHASE10_EQUITY_CURVE_NAME
+    equity_curve.write_parquet(equity_curve_path)
 
+    # 3. Validation
     validation_export = (
         prepared_trade_log.with_columns(pl.col("trading_date").cast(pl.Utf8))
         .filter(pl.col("trading_date").is_in(normalized_dates))
@@ -133,6 +202,8 @@ def write_core_analytics_artifacts(
         "phase5_trade_log_artifact": PHASE5_TRADE_LOG_ARTIFACT_NAME,
         "trade_log_csv_artifact": PHASE6_TRADE_LOG_CSV_NAME,
         "metrics_json_artifact": PHASE6_METRICS_JSON_NAME,
+        "phase10_analytics_report": PHASE10_ANALYTICS_REPORT_NAME,
+        "phase10_equity_curve": PHASE10_EQUITY_CURVE_NAME,
         "validation_export": f"validation/{PHASE6_VALIDATION_EXPORT_NAME}",
         "validation_dates": normalized_dates,
         "row_count": validation_export.height,

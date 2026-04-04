@@ -73,10 +73,7 @@ def build_daily_contract_map(df: pl.DataFrame) -> pl.DataFrame:
     input_days = set(enriched["trading_date"].unique().to_list())
     eligible_days = set(volumes["trading_date"].unique().to_list()) if volumes.height else set()
     if missing_days := sorted(input_days - eligible_days):
-        raise ValueError(
-            "Unable to determine front-month contract for trading_date(s): "
-            + ", ".join(str(day) for day in missing_days)
-        )
+        return pl.DataFrame(schema=volumes.schema)
 
     front_month = (
         volumes.group_by("trading_date")
